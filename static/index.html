@@ -98,6 +98,15 @@
           <div class="chat-history" id="chatHistory"></div>
         </div>
 
+	<!-- ===== 添加生成测试用例按钮（开始）===== -->
+	<div class="action-bar" style="display: flex; gap: 10px; padding: 0 16px 8px 16px; align-items: center; flex-wrap: wrap;">
+	    <button id="generateTestcaseBtn" class="btn btn-primary" style="background: #2563eb; color: white; padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;">
+		<i data-lucide="file-text"></i> 生成测试用例
+	    </button>
+	    <span id="generateStatus" style="font-size: 13px; color: #666; padding: 4px 10px; border-radius: 4px; background: #f3f4f6;"></span>
+	</div>
+	<!-- ===== 添加生成测试用例按钮（结束）===== -->
+
         <div class="composer industrial-composer">
           <div class="composer-meta"><span id="composerScope" class="composer-scope">全部分类｜default/default｜public</span><span class="composer-hint">输入问题，Enter 发送，Shift + Enter 换行</span></div>
           <div class="composer-box"><textarea id="chatInput" class="chat-input" rows="1" placeholder="输入工程资料问题，例如：图纸变更后旧版本还能作为施工依据吗？"></textarea><button id="sendBtn" class="send-button" title="发送"><i data-lucide="send-horizontal"></i><span>发送</span></button></div>
