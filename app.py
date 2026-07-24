@@ -34,6 +34,8 @@ from qa_core.config.settings import get_settings
 from qa_core.observability.langsmith_adapter import configure_langsmith_environment
 from qa_core.retrieval.factory import warmup_retrieval_stack
 
+from agent.api import router as agent_router
+
 settings = get_settings()
 configure_langsmith_environment()
 logger = get_logger(__name__)
@@ -104,6 +106,7 @@ app.include_router(pages.router)
 app.include_router(chat.router)
 app.include_router(admin.router)
 app.include_router(kb_versions.router)
+app.include_router(agent_router)
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)

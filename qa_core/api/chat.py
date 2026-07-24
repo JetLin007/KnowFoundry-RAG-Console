@@ -29,6 +29,8 @@ from qa_core.memory.feedback import get_feedback_store
 from qa_core.memory.history import get_history_store
 from qa_core.scenarios.registry import get_scenario_registry, resolve_scenario
 from qa_core.schemas import FeedbackRequest, RetrievalDebugRequest, RetrievalDebugResponse
+from agent.router import AgentRouter
+
 router = APIRouter()
 # 加载应用全局设置（限流、历史摘要开关等 API 层配置）
 settings = get_settings()
@@ -227,6 +229,33 @@ async def websocket_endpoint(websocket: WebSocket):
             if not context.query:
                 await websocket.send_json({"type": "error", "error": "查询内容不能为空"})
                 continue
+
+            # ===== Agent 路由判断（新增） =====
+            # 检测是否应该由 Agent 处理
+            if "生成" in context.query and "测试用例" in context.query:
+                agent_router = AgentRouter()
+                try:
+                    result = await agent_router.route(context.query, context.session_id)
+                    if isinstance(result, dict):
+                        # 工作流结果，转换为流式事件输出
+                        await websocket.send_json({
+                            "type": "token",
+                            "token": result.get("content", "工作流执行完成")
+                        })
+                        await websocket.send_json({
+                            "type": "end",
+                            "sources": [],
+                            "trace_id": "agent_workflow",
+                            "doc_path": result.get("doc_path", "")
+                        })
+                        continue
+                except Exception as e:
+                    await websocket.send_json({
+                        "type": "error",
+                        "error": f"Agent 执行失败: {str(e)}"
+                    })
+                    continue
+            # ===== Agent 路由判断结束 =====
 
             if not await _send_stream_events(websocket, context):
                 return
