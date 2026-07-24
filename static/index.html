@@ -17,7 +17,7 @@
     <header class="topbar industrial-topbar">
       <div class="brand industrial-brand">
         <span class="brand-mark"><i data-lucide="cog"></i></span>
-        <span class="brand-text">KnowFoundry RAG Console</span>
+        <span class="brand-text">集星科技知识库</span>
       </div>
 
       <div class="topbar-actions industrial-actions">
@@ -100,8 +100,22 @@
 
 	<!-- ===== 添加生成测试用例按钮（开始）===== -->
 	<div class="action-bar" style="display: flex; gap: 10px; padding: 0 16px 8px 16px; align-items: center; flex-wrap: wrap;">
-	    <button id="generateTestcaseBtn" class="btn btn-primary" style="background: #2563eb; color: white; padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;">
-		<i data-lucide="file-text"></i> 生成测试用例
+	    <select id="docTypeSelect" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 13px; background: white;">
+		<option value="开发计划">软件开发计划</option>
+		<option value="质量保证计划" selected>软件质量保证计划</option>
+		<option value="配置管理计划">软件配置管理计划</option>
+		<option value="需求规格说明">软件需求规格说明</option>
+		<option value="技术方案">软件总体技术方案</option>
+		<option value="审查报告">技术审查报告</option>
+		<option value="测试用例">软件测试用例文档</option>
+		<option value="用户手册">软件用户手册</option>
+		<option value="验收报告">软件验收报告</option>
+	    </select>
+
+	    <input id="productInput" type="text" placeholder="输入产品名称（可选）" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 13px; width: 160px;" />
+
+	    <button id="generateDocBtn" class="btn btn-primary" style="background: #2563eb; color: white; padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;">
+		<i data-lucide="file-text"></i> 生成文档
 	    </button>
 	    <span id="generateStatus" style="font-size: 13px; color: #666; padding: 4px 10px; border-radius: 4px; background: #f3f4f6;"></span>
 	</div>
