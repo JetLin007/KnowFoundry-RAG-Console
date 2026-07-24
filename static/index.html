@@ -3,26 +3,26 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>KnowFoundry RAG Console</title>
+  <title>军用软件开发文档助手</title>
   <script src="/static/js/vendor/lucide.min.js?v=20260613-no-selects"></script>
   <script src="/static/js/vendor/marked.min.js"></script>
   <script src="/static/js/vendor/purify.min.js"></script>
   <link rel="stylesheet" href="/static/css/app.css?v=20260619-chat-blue-lighter" />
   <script>
     window.ADMIN_API_TOKEN = 'admin-token-123';
-</script>
+  </script>
 </head>
 <body>
   <div class="app-shell industrial-shell">
     <header class="topbar industrial-topbar">
       <div class="brand industrial-brand">
-        <span class="brand-mark"><i data-lucide="cog"></i></span>
-        <span class="brand-text">集星科技知识库</span>
+        <span class="brand-mark"><i data-lucide="shield"></i></span>
+        <span class="brand-text">军用软件开发文档助手</span>
       </div>
 
       <div class="topbar-actions industrial-actions">
         <a class="btn btn-ghost" href="admin" title="状态页"><i data-lucide="layout-dashboard"></i><span>状态页</span></a>
-        <span class="user-chip"><span class="user-avatar"><img class="user-avatar-img" src="/static/img/vectorpeak_no_background.png" alt="" /></span><span>admin</span><i data-lucide="chevron-down"></i></span>
+        <span class="user-chip"><span class="user-avatar"><img class="user-avatar-img" src="/static/img/vectorpeak_no_background.png" alt="" /></span><span>管理员</span><i data-lucide="chevron-down"></i></span>
       </div>
     </header>
 
@@ -76,8 +76,8 @@
       <section class="panel chat-panel industrial-chat-panel">
         <div class="chat-context industrial-chat-head">
           <div class="context-main">
-            <div class="context-title" id="contextTitle">工业资料分类与问答</div>
-            <div class="context-subtitle" id="contextSubtitle">基于企业知识库的 RAG 检索增强问答，支持工程资料分类与检索</div>
+            <div class="context-title" id="contextTitle">军用软件文档生成与问答</div>
+            <div class="context-subtitle" id="contextSubtitle">基于 GJB 438C 标准，支持文档生成和知识问答</div>
           </div>
           <div class="context-tags">
             <span class="pill ok" id="connectionPill"><span class="status-dot"></span><span>就绪</span></span>
@@ -98,41 +98,71 @@
           <div class="chat-history" id="chatHistory"></div>
         </div>
 
-	<!-- ===== 添加生成测试用例按钮（开始）===== -->
-	<div class="action-bar" style="display: flex; gap: 10px; padding: 0 16px 8px 16px; align-items: center; flex-wrap: wrap;">
-	    <select id="docTypeSelect" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 13px; background: white;">
-		<option value="开发计划">软件开发计划</option>
-		<option value="质量保证计划" selected>软件质量保证计划</option>
-		<option value="配置管理计划">软件配置管理计划</option>
-		<option value="需求规格说明">软件需求规格说明</option>
-		<option value="技术方案">软件总体技术方案</option>
-		<option value="审查报告">技术审查报告</option>
-		<option value="测试用例">软件测试用例文档</option>
-		<option value="用户手册">软件用户手册</option>
-		<option value="验收报告">软件验收报告</option>
-	    </select>
+        <!-- ===== 文档生成操作栏 ===== -->
+        <div class="action-bar" style="display: flex; gap: 10px; padding: 0 16px 8px 16px; align-items: center; flex-wrap: wrap;">
+          <select id="docTypeSelect" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 13px; background: white; height: 36px;">
+            <option value="开发计划">软件开发计划</option>
+            <option value="质量保证计划" selected>软件质量保证计划</option>
+            <option value="配置管理计划">软件配置管理计划</option>
+            <option value="需求规格说明">软件需求规格说明</option>
+            <option value="技术方案">软件总体技术方案</option>
+            <option value="审查报告">技术审查报告</option>
+            <option value="测试用例">软件测试用例文档</option>
+            <option value="用户手册">软件用户手册</option>
+            <option value="验收报告">软件验收报告</option>
+          </select>
 
-	    <input id="productInput" type="text" placeholder="输入产品名称（可选）" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 13px; width: 160px;" />
+          <input id="productInput" type="text" placeholder="产品名称（可选）" 
+                 style="padding: 6px 12px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 13px; width: 150px; height: 36px; background: white;" />
 
-	    <button id="generateDocBtn" class="btn btn-primary" style="background: #2563eb; color: white; padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;">
-		<i data-lucide="file-text"></i> 生成文档
-	    </button>
-	    <span id="generateStatus" style="font-size: 13px; color: #666; padding: 4px 10px; border-radius: 4px; background: #f3f4f6;"></span>
-	</div>
-	<!-- ===== 添加生成测试用例按钮（结束）===== -->
+          <button id="generateDocBtn" class="btn btn-primary" style="background: #2563eb; color: white; padding: 6px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; height: 36px;">
+            <i data-lucide="file-text"></i> 生成文档
+          </button>
+
+          <span id="generateStatus" style="font-size: 13px; color: #666; padding: 4px 10px; border-radius: 4px; background: #f3f4f6; height: 36px; display: flex; align-items: center;"></span>
+        </div>
 
         <div class="composer industrial-composer">
           <div class="composer-meta"><span id="composerScope" class="composer-scope">全部分类｜default/default｜public</span><span class="composer-hint">输入问题，Enter 发送，Shift + Enter 换行</span></div>
-          <div class="composer-box"><textarea id="chatInput" class="chat-input" rows="1" placeholder="输入工程资料问题，例如：图纸变更后旧版本还能作为施工依据吗？"></textarea><button id="sendBtn" class="send-button" title="发送"><i data-lucide="send-horizontal"></i><span>发送</span></button></div>
+          <div class="composer-box"><textarea id="chatInput" class="chat-input" rows="1" placeholder="输入问题，例如：生成软件开发计划"></textarea><button id="sendBtn" class="send-button" title="发送"><i data-lucide="send-horizontal"></i><span>发送</span></button></div>
         </div>
       </section>
 
       <aside class="panel right-panel insight-panel">
         <div class="panel-body insight-body">
           <section class="side-section insight-card recent-card"><div class="side-section-title"><i data-lucide="messages-square"></i><span>快速入口</span><i data-lucide="chevron-up" class="card-toggle-icon"></i></div><div class="sample-list" id="sampleQuestions"></div></section>
+          
           <section class="side-section insight-card classification-card"><div class="side-section-title"><i data-lucide="gauge-circle"></i><span>分类结果</span><i data-lucide="chevron-up" class="card-toggle-icon"></i></div><div class="classification-result" id="classificationResult"><div><span>可能分类</span><strong class="classification-badge is-waiting">等待分类</strong></div><ol></ol><p>分类结果会随最近一次回答更新，展示候选分类的相对强度。</p></div></section>
+          
           <section class="side-section insight-card"><div class="side-section-title"><i data-lucide="list-checks"></i><span>命中来源</span><i data-lucide="chevron-up" class="card-toggle-icon"></i></div><div id="sideStats" class="side-stats"></div></section>
+          
           <section class="side-section insight-card"><div class="side-section-title"><i data-lucide="database"></i><span>知识库版本</span><i data-lucide="chevron-up" class="card-toggle-icon"></i></div><div class="kb-summary" id="kbSummary"><div><span>当前知识库</span><strong>-</strong></div><div><span>状态</span><strong class="ok-text">等待数据</strong></div><div><span>文档总数</span><strong>-</strong></div><div><span>入库时间</span><strong>-</strong></div></div></section>
+
+          <!-- ===== 模板管理卡片 ===== -->
+          <section class="side-section insight-card template-card">
+            <div class="side-section-title">
+              <i data-lucide="template"></i>
+              <span>模板管理</span>
+              <i data-lucide="chevron-up" class="card-toggle-icon"></i>
+            </div>
+            <div class="template-section">
+              <div class="template-upload" style="margin-bottom: 10px;">
+                <input type="file" id="templateFileInput" accept=".docx" style="display: none;" />
+                <button id="uploadTemplateBtn" class="btn btn-secondary btn-sm" style="width: 100%; padding: 6px; font-size: 12px; border: 1px dashed #d1d5db; border-radius: 4px; cursor: pointer; background: #f9fafb;">
+                  <i data-lucide="upload"></i> 上传模板 (.docx)
+                </button>
+                <div id="templateUploadStatus" style="font-size: 12px; color: #666; margin-top: 4px;"></div>
+              </div>
+              <div id="templateList" style="max-height: 150px; overflow-y: auto;">
+                <div style="font-size: 12px; color: #999; text-align: center; padding: 8px;">暂无模板，请上传</div>
+              </div>
+              <div style="margin-top: 8px; padding: 6px; background: #f3f4f6; border-radius: 4px; font-size: 12px; color: #666;">
+                <span>当前模板：</span>
+                <span id="currentTemplateName" style="color: #2563eb;">默认模板</span>
+              </div>
+            </div>
+          </section>
+
           <section class="side-section insight-card service-card"><div class="side-section-title"><i data-lucide="server-cog"></i><span>服务健康</span><i data-lucide="chevron-up" class="card-toggle-icon"></i></div><div class="health-list"><span>Milvus 向量库 <strong>正常</strong></span><span>MySQL 元数据 <strong>正常</strong></span><span>MinIO 对象存储 <strong>正常</strong></span><span>WebSocket 通道 <strong id="websocketHealth" class="status-pending">待检测</strong></span></div></section>
         </div>
       </aside>
@@ -149,7 +179,6 @@
   <script src="/static/js/chat.js?v=20260613-session-cards"></script>
   <script src="/static/js/app.js?v=20260614-toggle-icon"></script>
   <script>
-    // Keep Lucide icons active for the initial static shell; dynamic areas refresh in render.js.
     if (window.lucide) window.lucide.createIcons();
   </script>
 </body>
