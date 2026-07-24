@@ -1,0 +1,5 @@
+# 测试 BGE-M3
+python -c "from sentence_transformers import SentenceTransformer; m = SentenceTransformer('./models/bge-m3'); print('BGE-M3 loaded successfully')"
+
+# 测试 BGE-Reranker-Large
+python -c "from sentence_transformers import SentenceTransformer; m = SentenceTransformer('./models/bge-reranker-large'); print('BGE-Reranker-Large loaded successfully')"

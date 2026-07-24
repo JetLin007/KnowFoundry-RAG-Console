@@ -11,7 +11,10 @@ function streamAnswer(query, contentElement) {
 
   return new Promise((resolve, reject) => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    state.socket = new WebSocket(`${protocol}//${window.location.host}${API_BASE_URL}/api/stream`);
+    // 获取 token（从全局变量或使用默认值）
+    const token = window.ADMIN_API_TOKEN || 'admin-token-123';
+    state.socket = new WebSocket(`${protocol}//${window.location.host}${API_BASE_URL}/api/stream?token=${token}`);
+    //state.socket = new WebSocket(`${protocol}//${window.location.host}${API_BASE_URL}/api/stream`);
     let answer = '';
     let sources = [];
     let completed = false;

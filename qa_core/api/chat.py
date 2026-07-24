@@ -12,6 +12,7 @@
 """
 
 from __future__ import annotations
+import os
 import asyncio
 import json
 from collections.abc import Iterator
@@ -193,6 +194,21 @@ async def websocket_endpoint(websocket: WebSocket):
     """
     # 原因：在线问答统一走 WebSocket，避免多套在线入口造成重复意图分类、重复限流和链路口径不一致。
     await websocket.accept()
+
+    # ===== 添加 token 验证逻辑（开始） =====
+    # 从查询参数中获取 token
+    token = websocket.query_params.get("token")
+    expected_token = os.getenv("ADMIN_API_TOKEN", "admin-token-123")
+    
+    # 如果设置了 DEV_MODE=true，跳过 token 验证（仅用于开发）
+    dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
+    
+    if not dev_mode and token != expected_token:
+        logger.warning(f"WebSocket 认证失败: token={token}, expected={expected_token}")
+        await websocket.close(code=1008, reason="Unauthorized")
+        return
+    # ===== 添加 token 验证逻辑（结束） =====
+
     try:
         while True:
             raw_data = await websocket.receive_text()
