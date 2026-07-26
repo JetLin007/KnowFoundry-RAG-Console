@@ -300,17 +300,28 @@ function bindInsightCardToggles() {
 // 会话管理函数（占位，由其他模块实现）
 // ============================================
 
-async function restoreLatestSessionForScenario() {
-    if (typeof window.restoreLatestSessionForScenario === 'function') {
-        return window.restoreLatestSessionForScenario();
-    }
+// async function restoreLatestSessionForScenario() {
+//     if (typeof window.restoreLatestSessionForScenario === 'function') {
+//         return window.restoreLatestSessionForScenario();
+//     }
+//     return false;
+// }
+
+function restoreLatestSessionForScenario() {
+    console.log('restoreLatestSessionForScenario 已禁用');
     return false;
 }
 
-async function createNewSession() {
-    if (typeof window.createNewSession === 'function') {
-        return window.createNewSession();
-    }
+// async function createNewSession() {
+//     if (typeof window.createNewSession === 'function') {
+//         return window.createNewSession();
+//     }
+//     return false;
+// }
+//
+
+function createNewSession() {
+    console.log('createNewSession 已禁用');
     return false;
 }
 
@@ -380,9 +391,12 @@ function loadSessionCards() {
 }
 
 function renderSessionCards() {
-    if (typeof window.renderSessionCards === 'function') {
-        window.renderSessionCards();
-    }
+//     if (typeof window.renderSessionCards === 'function') {
+//         window.renderSessionCards();
+//     }
+	// 完全禁用，防止递归
+    console.log('renderSessionCards 已禁用');
+    return;
 }
 
 function clearHistory() {
