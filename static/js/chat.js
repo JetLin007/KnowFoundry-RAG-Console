@@ -108,41 +108,50 @@ function getScenarioDisplayName(scenarioId) {
 
 /**
  * 处理生成文档按钮点击
- * 直接调用 Agent API (HTTP)，不依赖 WebSocket
+ * 直接使用输入框中的完整查询内容（包含格式要求）
+ * 生成完成后保留预览功能
  */
 function handleGenerateDocument() {
     const statusEl = document.getElementById('generateStatus');
     if (!statusEl) return;
     
-    // 获取当前选中的场景
-    const scenarioId = state.scenarioId || 'enterprise_knowledge';
-    const scenarioName = getScenarioDisplayName(scenarioId);
+    // ===== 直接从输入框获取完整查询 =====
+    const inputEl = document.getElementById('chatInput');
+    if (!inputEl) {
+        console.error('找不到输入框');
+        return;
+    }
     
-    // 获取选中的文档类型
+    let query = inputEl.value.trim();
+    if (!query) {
+        // 如果输入框为空，使用下拉框和产品名构造查询
+        const docTypeSelect = document.getElementById('docTypeSelect');
+        const docType = docTypeSelect ? docTypeSelect.value : '开发计划';
+        const productInput = document.getElementById('productInput');
+        const productName = productInput ? productInput.value.trim() : '';
+        
+        if (productName) {
+            query = `为${productName}生成${docType}`;
+        } else {
+            query = `请生成${docType}`;
+        }
+        inputEl.value = query;
+        inputEl.dispatchEvent(new Event('input'));
+    }
+    
+    // 提取文档类型用于显示
     const docTypeSelect = document.getElementById('docTypeSelect');
     const docType = docTypeSelect ? docTypeSelect.value : '开发计划';
     
-    // 获取产品名称
-    const productInput = document.getElementById('productInput');
-    let productName = '';
-    if (productInput && productInput.value.trim()) {
-        productName = productInput.value.trim();
-    }
-    
-    // 构造查询
-    let query = '';
-    if (productName) {
-        query = `为${productName}生成${docType}`;
-    } else {
-        query = `请生成${docType}`;
-    }
+    // 获取当前选中的场景
+    const scenarioId = state.scenarioId || 'enterprise_knowledge';
     
     // 显示状态
     statusEl.textContent = `⏳ 正在生成${docType}...`;
     statusEl.style.color = '#2563eb';
     statusEl.style.background = '#dbeafe';
     
-    // 禁用按钮防止重复点击
+    // 禁用按钮
     const generateBtn = document.getElementById('generateDocBtn');
     if (generateBtn) {
         generateBtn.disabled = true;
@@ -150,19 +159,41 @@ function handleGenerateDocument() {
         generateBtn.style.cursor = 'not-allowed';
     }
     
-    // 将查询填入输入框（让用户看到）
-    const inputEl = document.getElementById('chatInput');
-    if (inputEl) {
-        inputEl.value = query;
-        inputEl.dispatchEvent(new Event('input'));
+    // ===== 1. 在聊天区域添加用户消息 =====
+    const chatHistory = document.getElementById('chatHistory');
+    if (chatHistory) {
+        const userDiv = document.createElement('div');
+        userDiv.className = 'message user-message';
+        userDiv.innerHTML = `<div class="message-content">${escapeHtml(query)}</div>`;
+        chatHistory.appendChild(userDiv);
+        
+        // 添加 AI 占位消息
+        const aiDiv = document.createElement('div');
+        aiDiv.className = 'message assistant-message streaming';
+        aiDiv.id = 'streaming-' + Date.now();
+        aiDiv.innerHTML = `<div class="message-content"><span class="typing-indicator">⏳ 正在生成${docType}...</span></div>`;
+        chatHistory.appendChild(aiDiv);
+        chatHistory.scrollTop = chatHistory.scrollHeight;
     }
     
-    // 获取 session_id
-    const session_id = state.sessionId || 'default';
+    // ===== 2. 通过 WebSocket 发送查询（流式输出） =====
+    if (state.socket && state.socket.readyState === WebSocket.OPEN) {
+        state.socket.send(JSON.stringify({
+            query: query,
+            source_filter: els.sourceFilter ? els.sourceFilter.value : '',
+            session_id: state.sessionId || 'default',
+            scenario_id: scenarioId,
+            tenant_id: els.tenantInput ? els.tenantInput.value.trim() || 'default' : 'default',
+            dataset_id: els.datasetInput ? els.datasetInput.value.trim() || 'default' : 'default',
+            visibility: els.visibilitySelect ? els.visibilitySelect.value : 'public',
+            user_role: els.roleSelect ? els.roleSelect.value : 'public'
+        }));
+        console.log('📄 文档生成请求已通过 WebSocket 发送:', query);
+    } else {
+        console.warn('⚠️ WebSocket 未连接，无法流式输出');
+    }
     
-    console.log('📄 生成文档请求:', { query, scenarioId, session_id });
-    
-    // ===== 直接调用 Agent API (HTTP) =====
+    // ===== 3. 同时调用 HTTP API 生成文档 =====
     fetch('/api/agent/run', {
         method: 'POST',
         headers: {
@@ -171,7 +202,7 @@ function handleGenerateDocument() {
         body: JSON.stringify({
             query: query,
             scenario_id: scenarioId,
-            session_id: session_id
+            session_id: state.sessionId || 'default'
         })
     })
     .then(response => {
@@ -184,77 +215,99 @@ function handleGenerateDocument() {
         console.log('📄 文档生成响应:', data);
         
         if (data.status === 'success') {
-            // 成功生成
             statusEl.textContent = `✅ ${docType}已生成！`;
             statusEl.style.color = '#16a34a';
             statusEl.style.background = '#dcfce7';
             
-            // 在聊天区域显示成功信息
-            const chatHistory = document.getElementById('chatHistory');
-            if (chatHistory) {
-                const div = document.createElement('div');
-                div.className = 'message assistant-message success-message';
-                div.innerHTML = `
-                    <div class="message-content">
-                        <p><strong>✅ ${docType} 已成功生成</strong></p>
-                        <p style="margin-top: 8px; font-size: 13px; color: #555;">
-                            📁 文档路径: <code style="background: #f3f4f6; padding: 2px 8px; border-radius: 4px; font-size: 12px;">${data.doc_path || '未知路径'}</code>
-                        </p>
-                        ${data.doc_path ? `<p style="margin-top: 4px;"><a href="/${data.doc_path}" target="_blank" style="color: #2563eb; text-decoration: underline;">📂 点击打开文档</a></p>` : ''}
-                        <p style="margin-top: 8px; font-size: 12px; color: #999;">文档类型: ${data.doc_type || docType} | 产品: ${data.product_name || productName || '未指定'}</p>
-                    </div>
-                `;
-                chatHistory.appendChild(div);
-                chatHistory.scrollTop = chatHistory.scrollHeight;
+            // ===== 显示文档内容（保留预览功能） =====
+            const streamingEl = document.querySelector('.assistant-message.streaming');
+            if (streamingEl) {
+                const content = streamingEl.querySelector('.message-content');
+                if (content) {
+                    let docContent = data.content || '文档内容为空';
+                    let formattedContent = formatMarkdownToHtml(docContent);
+                    
+                    // 对内容进行编码以便传递给复制函数
+                    const encodedContent = encodeURIComponent(docContent);
+                    
+                    content.innerHTML = `
+                        <div class="doc-content-wrapper" style="width: 100%;">
+                            <!-- 文档头部信息 -->
+                            <div style="background: #f0fdf4; padding: 12px 16px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid #16a34a; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                                <div>
+                                    <p style="margin: 0; font-weight: 600; color: #166534; font-size: 15px;">✅ ${docType} 已成功生成</p>
+                                    <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b;">
+                                        📁 文档路径: <code style="background: #e2e8f0; padding: 2px 8px; border-radius: 4px; font-size: 12px;">${data.doc_path || '未知路径'}</code>
+                                    </p>
+                                </div>
+                                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                    ${data.doc_path ? `<a href="/${data.doc_path}" target="_blank" style="color: #2563eb; text-decoration: underline; font-size: 13px; padding: 4px 12px; background: #dbeafe; border-radius: 4px;">📂 打开文档</a>` : ''}
+                                    <button onclick="toggleDocPreview(this)" style="padding: 4px 12px; background: #e2e8f0; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; color: #1e293b;">👁️ 预览</button>
+                                    <button onclick="copyDocContent(this, '${encodedContent}')" style="padding: 4px 12px; background: #e2e8f0; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; color: #1e293b;">📋 复制</button>
+                                </div>
+                            </div>
+                            
+                            <!-- 文档正文（可折叠预览） -->
+                            <div class="doc-body-container" style="position: relative; max-height: 400px; overflow: hidden; border-radius: 6px; border: 1px solid #e2e8f0;">
+                                <div class="doc-body" style="padding: 16px; font-size: 14px; line-height: 1.8; color: #1e293b; max-height: 400px; overflow-y: auto; background: #fafafa;">
+                                    ${formattedContent}
+                                </div>
+                                <div class="doc-fade" style="position: absolute; bottom: 0; left: 0; right: 0; height: 60px; background: linear-gradient(transparent, #fafafa); pointer-events: none;"></div>
+                            </div>
+                            
+                            <!-- 文档底部信息 -->
+                            <div style="margin-top: 12px; padding: 8px 12px; background: #f1f5f9; border-radius: 6px; font-size: 12px; color: #64748b; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                                <span>📋 文档类型: ${data.doc_type || docType} | 产品: ${data.product_name || '未指定'}</span>
+                                <span>风格: ${data.style || '标准'} | 生成时间: ${new Date().toLocaleTimeString()}</span>
+                            </div>
+                        </div>
+                    `;
+                }
+                streamingEl.classList.remove('streaming');
             }
             
-            // 更新侧边栏统计
             if (typeof updateSideStats === 'function') {
                 state.lastStreamStatus = `${docType}生成完成`;
                 updateSideStats();
             }
             
         } else if (data.status === 'info') {
-            // 信息提示（路由到了 RAG 链路）
             statusEl.textContent = `ℹ️ ${data.content || '已路由到 RAG 链路'}`;
             statusEl.style.color = '#f59e0b';
             statusEl.style.background = '#fef3c7';
             
-            // 在聊天区域显示提示
-            const chatHistory = document.getElementById('chatHistory');
-            if (chatHistory) {
-                const div = document.createElement('div');
-                div.className = 'message assistant-message info-message';
-                div.innerHTML = `
-                    <div class="message-content">
-                        <p><strong>ℹ️ 提示</strong></p>
-                        <p>${data.content || '该请求已路由到 RAG 链路，请等待流式响应。'}</p>
-                    </div>
-                `;
-                chatHistory.appendChild(div);
-                chatHistory.scrollTop = chatHistory.scrollHeight;
+            const streamingEl = document.querySelector('.assistant-message.streaming');
+            if (streamingEl) {
+                const content = streamingEl.querySelector('.message-content');
+                if (content) {
+                    content.innerHTML = `
+                        <div style="padding: 8px;">
+                            <p><strong>ℹ️ 提示</strong></p>
+                            <p>${data.content || '该请求已路由到 RAG 链路，请等待流式响应。'}</p>
+                        </div>
+                    `;
+                }
+                streamingEl.classList.remove('streaming');
             }
             
         } else {
-            // 失败
             const errorMsg = data.error || data.content || '未知错误';
             statusEl.textContent = `❌ 生成失败`;
             statusEl.style.color = '#dc2626';
             statusEl.style.background = '#fecaca';
             
-            // 在聊天区域显示错误
-            const chatHistory = document.getElementById('chatHistory');
-            if (chatHistory) {
-                const div = document.createElement('div');
-                div.className = 'message assistant-message error-message';
-                div.innerHTML = `
-                    <div class="message-content">
-                        <p><strong>❌ 生成失败</strong></p>
-                        <p style="color: #dc2626;">${errorMsg}</p>
-                    </div>
-                `;
-                chatHistory.appendChild(div);
-                chatHistory.scrollTop = chatHistory.scrollHeight;
+            const streamingEl = document.querySelector('.assistant-message.streaming');
+            if (streamingEl) {
+                const content = streamingEl.querySelector('.message-content');
+                if (content) {
+                    content.innerHTML = `
+                        <div style="color: #dc2626; padding: 8px;">
+                            <p><strong>❌ 生成失败</strong></p>
+                            <p>${errorMsg}</p>
+                        </div>
+                    `;
+                }
+                streamingEl.classList.remove('streaming');
             }
         }
     })
@@ -264,39 +317,208 @@ function handleGenerateDocument() {
         statusEl.style.color = '#dc2626';
         statusEl.style.background = '#fecaca';
         
-        // 在聊天区域显示错误
-        const chatHistory = document.getElementById('chatHistory');
-        if (chatHistory) {
-            const div = document.createElement('div');
-            div.className = 'message assistant-message error-message';
-            div.innerHTML = `
-                <div class="message-content">
-                    <p><strong>❌ 网络错误</strong></p>
-                    <p style="color: #dc2626;">${error.message}</p>
-                    <p style="font-size: 12px; color: #999; margin-top: 4px;">请检查后端服务是否正常运行</p>
-                </div>
-            `;
-            chatHistory.appendChild(div);
-            chatHistory.scrollTop = chatHistory.scrollHeight;
+        const streamingEl = document.querySelector('.assistant-message.streaming');
+        if (streamingEl) {
+            const content = streamingEl.querySelector('.message-content');
+            if (content) {
+                content.innerHTML = `
+                    <div style="color: #dc2626; padding: 8px;">
+                        <p><strong>❌ 网络错误</strong></p>
+                        <p>${error.message}</p>
+                        <p style="font-size: 12px; color: #999; margin-top: 4px;">请检查后端服务是否正常运行</p>
+                    </div>
+                `;
+            }
+            streamingEl.classList.remove('streaming');
         }
     })
     .finally(() => {
-        // 恢复按钮
         if (generateBtn) {
             generateBtn.disabled = false;
             generateBtn.style.opacity = '1';
             generateBtn.style.cursor = 'pointer';
         }
         
-        // 5秒后清除状态
         setTimeout(() => {
             if (statusEl.textContent && !statusEl.textContent.includes('✅')) {
-                // 只有成功状态保留更长时间
                 statusEl.textContent = '';
                 statusEl.style.background = '#f3f4f6';
             }
         }, 8000);
     });
+}
+
+/**
+ * 将 Markdown 格式转换为 HTML（用于文档显示）
+ */
+function formatMarkdownToHtml(content) {
+    if (!content) return '';
+    
+    let html = content;
+    
+    // 1. 处理标题 (h1, h2, h3, h4)
+    html = html.replace(/^#### (.*$)/gm, '<h4 style="font-size: 16px; font-weight: 600; color: #1e293b; margin: 12px 0 4px 0;">$1</h4>');
+    html = html.replace(/^### (.*$)/gm, '<h3 style="font-size: 18px; font-weight: 600; color: #1e293b; margin: 16px 0 6px 0; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">$1</h3>');
+    html = html.replace(/^## (.*$)/gm, '<h2 style="font-size: 20px; font-weight: 700; color: #0f172a; margin: 20px 0 8px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px;">$1</h2>');
+    html = html.replace(/^# (.*$)/gm, '<h1 style="font-size: 24px; font-weight: 700; color: #0f172a; margin: 24px 0 10px 0; border-bottom: 3px solid #2563eb; padding-bottom: 8px;">$1</h1>');
+    
+    // 2. 处理表格
+    // 先收集表格行
+    const tableLines = [];
+    let inTable = false;
+    const lines = html.split('\n');
+    let processedLines = [];
+    
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.trim().startsWith('|')) {
+            if (!inTable) {
+                inTable = true;
+                tableLines.length = 0;
+            }
+            tableLines.push(line.trim());
+        } else {
+            if (inTable) {
+                // 结束表格，渲染
+                if (tableLines.length > 0) {
+                    // 检查是否有分隔行（包含 ---）
+                    const hasSeparator = tableLines.some(l => l.includes('---'));
+                    let headers = [];
+                    let rows = [];
+                    
+                    if (hasSeparator) {
+                        // 第一行是表头
+                        const headerLine = tableLines[0];
+                        headers = headerLine.split('|').filter(c => c.trim() && !c.includes('---')).map(c => c.trim());
+                        // 从第三行开始是数据
+                        for (let j = 2; j < tableLines.length; j++) {
+                            const cells = tableLines[j].split('|').filter(c => c.trim());
+                            if (cells.length > 0) {
+                                rows.push(cells.map(c => c.trim()));
+                            }
+                        }
+                    } else {
+                        // 所有行都是数据
+                        for (let j = 0; j < tableLines.length; j++) {
+                            const cells = tableLines[j].split('|').filter(c => c.trim());
+                            if (cells.length > 0) {
+                                if (j === 0) {
+                                    headers = cells.map(c => c.trim());
+                                } else {
+                                    rows.push(cells.map(c => c.trim()));
+                                }
+                            }
+                        }
+                    }
+                    
+                    // 生成表格 HTML
+                    let tableHtml = '<table style="width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px;">';
+                    if (headers.length > 0) {
+                        tableHtml += '<thead><tr>';
+                        headers.forEach(h => {
+                            tableHtml += `<th style="border: 1px solid #d1d5db; padding: 6px 10px; background: #f1f5f9; text-align: left; font-weight: 600;">${h}</th>`;
+                        });
+                        tableHtml += '</tr></thead>';
+                    }
+                    if (rows.length > 0) {
+                        tableHtml += '<tbody>';
+                        rows.forEach(row => {
+                            tableHtml += '<tr>';
+                            row.forEach(cell => {
+                                tableHtml += `<td style="border: 1px solid #d1d5db; padding: 6px 10px;">${cell}</td>`;
+                            });
+                            tableHtml += '</tr>';
+                        });
+                        tableHtml += '</tbody>';
+                    }
+                    tableHtml += '</table>';
+                    processedLines.push(tableHtml);
+                }
+                inTable = false;
+                tableLines.length = 0;
+            }
+            if (line.trim()) {
+                processedLines.push(line);
+            }
+        }
+    }
+    if (inTable && tableLines.length > 0) {
+        // 处理最后的表格
+        const hasSeparator = tableLines.some(l => l.includes('---'));
+        let headers = [];
+        let rows = [];
+        if (hasSeparator) {
+            const headerLine = tableLines[0];
+            headers = headerLine.split('|').filter(c => c.trim() && !c.includes('---')).map(c => c.trim());
+            for (let j = 2; j < tableLines.length; j++) {
+                const cells = tableLines[j].split('|').filter(c => c.trim());
+                if (cells.length > 0) {
+                    rows.push(cells.map(c => c.trim()));
+                }
+            }
+        } else {
+            for (let j = 0; j < tableLines.length; j++) {
+                const cells = tableLines[j].split('|').filter(c => c.trim());
+                if (cells.length > 0) {
+                    if (j === 0) {
+                        headers = cells.map(c => c.trim());
+                    } else {
+                        rows.push(cells.map(c => c.trim()));
+                    }
+                }
+            }
+        }
+        let tableHtml = '<table style="width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px;">';
+        if (headers.length > 0) {
+            tableHtml += '<thead><tr>';
+            headers.forEach(h => {
+                tableHtml += `<th style="border: 1px solid #d1d5db; padding: 6px 10px; background: #f1f5f9; text-align: left; font-weight: 600;">${h}</th>`;
+            });
+            tableHtml += '</tr></thead>';
+        }
+        if (rows.length > 0) {
+            tableHtml += '<tbody>';
+            rows.forEach(row => {
+                tableHtml += '<tr>';
+                row.forEach(cell => {
+                    tableHtml += `<td style="border: 1px solid #d1d5db; padding: 6px 10px;">${cell}</td>`;
+                });
+                tableHtml += '</tr>';
+            });
+            tableHtml += '</tbody>';
+        }
+        tableHtml += '</table>';
+        processedLines.push(tableHtml);
+    }
+    
+    html = processedLines.join('\n');
+    
+    // 3. 处理粗体
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    
+    // 4. 处理代码块
+    html = html.replace(/```([\s\S]*?)```/g, '<pre style="background: #f1f5f9; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 12px;"><code>$1</code></pre>');
+    
+    // 5. 处理行内代码
+    html = html.replace(/`([^`]+)`/g, '<code style="background: #f1f5f9; padding: 2px 6px; border-radius: 3px; font-size: 13px;">$1</code>');
+    
+    // 6. 处理列表
+    html = html.replace(/^- (.*$)/gm, '<li style="margin: 2px 0;">$1</li>');
+    html = html.replace(/^• (.*$)/gm, '<li style="margin: 2px 0;">$1</li>');
+    html = html.replace(/(<li>.*<\/li>)/s, '<ul style="margin: 6px 0; padding-left: 20px;">$1</ul>');
+    
+    // 7. 处理分隔线
+    html = html.replace(/^---$/gm, '<hr style="border: 1px solid #e2e8f0; margin: 16px 0;">');
+    
+    // 8. 处理段落
+    html = html.split('\n\n').map(para => {
+        if (para.trim() && !para.trim().startsWith('<')) {
+            return `<p style="margin: 4px 0;">${para.trim()}</p>`;
+        }
+        return para;
+    }).join('\n');
+    
+    return html;
 }
 // ============================================
 // 模板管理功能
@@ -457,3 +679,124 @@ function escapeHtml(text) {
 }
 
 console.log('chat.js 加载完成');
+
+// ============================================
+// 文档预览辅助函数
+// ============================================
+
+/**
+ * 切换文档预览展开/收起
+ */
+function toggleDocPreview(btn) {
+    const container = btn.closest('.doc-content-wrapper');
+    if (!container) return;
+
+    const bodyContainer = container.querySelector('.doc-body-container');
+    const fade = container.querySelector('.doc-fade');
+
+    if (!bodyContainer) return;
+
+    const isExpanded = bodyContainer.style.maxHeight === 'none';
+
+    if (isExpanded) {
+        bodyContainer.style.maxHeight = '400px';
+        bodyContainer.style.overflow = 'hidden';
+        if (fade) fade.style.display = 'block';
+        btn.textContent = '👁️ 预览';
+    } else {
+        bodyContainer.style.maxHeight = 'none';
+        bodyContainer.style.overflow = 'visible';
+        if (fade) fade.style.display = 'none';
+        btn.textContent = '📄 收起';
+    }
+}
+
+/**
+ * 复制文档内容
+ */
+function copyDocContent(btn, encodedContent) {
+    const content = decodeURIComponent(encodedContent);
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(content).then(() => {
+            btn.textContent = '✅ 已复制';
+            setTimeout(() => { btn.textContent = '📋 复制'; }, 2000);
+        }).catch(() => fallbackCopy(content, btn));
+    } else {
+        fallbackCopy(content, btn);
+    }
+}
+
+function fallbackCopy(text, btn) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
+    if (btn) {
+        btn.textContent = '✅ 已复制';
+        setTimeout(() => { btn.textContent = '📋 复制'; }, 2000);
+    }
+}
+
+
+/**
+ * 渲染表格
+ */
+function renderTable(tableLines) {
+    const hasSeparator = tableLines.some(l => l.includes('---'));
+    let headers = [];
+    let rows = [];
+
+    if (hasSeparator) {
+        const headerLine = tableLines[0];
+        headers = headerLine.split('|').filter(c => c.trim() && !c.includes('---')).map(c => c.trim());
+        for (let j = 2; j < tableLines.length; j++) {
+            const cells = tableLines[j].split('|').filter(c => c.trim());
+            if (cells.length > 0) {
+                rows.push(cells.map(c => c.trim()));
+            }
+        }
+    } else {
+        for (let j = 0; j < tableLines.length; j++) {
+            const cells = tableLines[j].split('|').filter(c => c.trim());
+            if (cells.length > 0) {
+                if (j === 0) {
+                    headers = cells.map(c => c.trim());
+                } else {
+                    rows.push(cells.map(c => c.trim()));
+                }
+            }
+        }
+    }
+
+    let tableHtml = '<div style="overflow-x: auto; margin: 12px 0;">';
+    tableHtml += '<table style="width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid #d1d5db;">';
+
+    if (headers.length > 0) {
+        tableHtml += '<thead>';
+        tableHtml += '<tr>';
+        headers.forEach(h => {
+            tableHtml += `<th style="border: 1px solid #d1d5db; padding: 6px 10px; background: #f1f5f9; text-align: left; font-weight: 600;">${h}</th>`;
+        });
+        tableHtml += '</tr>';
+        tableHtml += '</thead>';
+    }
+
+    if (rows.length > 0) {
+        tableHtml += '<tbody>';
+        rows.forEach(row => {
+            tableHtml += '<tr>';
+            row.forEach(cell => {
+                tableHtml += `<td style="border: 1px solid #d1d5db; padding: 6px 10px;">${cell}</td>`;
+            });
+            tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody>';
+    }
+
+    tableHtml += '</table>';
+    tableHtml += '</div>';
+    return tableHtml;
+}
