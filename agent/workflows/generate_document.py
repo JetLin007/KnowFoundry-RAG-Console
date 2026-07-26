@@ -155,11 +155,9 @@ def get_default_structure_for_doc_type(doc_type: str) -> str:
 2. 需求分析
 3. 总体建设方案
 4. 软件设计方案
-5. 数据可视化方案
-6. 三维电子沙盘方案
-7. 项目实施计划
-8. 运维保障方案
-9. 投资概算"""
+5. 项目实施计划
+6. 运维保障方案
+7. 投资概算"""
     }
     return default_structures.get(doc_type, default_structures.get("质量保证"))
 
@@ -392,30 +390,19 @@ DOC_TYPE_MAP = {
 - 各子系统功能模块：各功能模块详细设计
 - 系统集成方案：系统间的集成方式
 
-### 5. 数据可视化方案
-- 数据源接入：各类数据源接入方式
-- 数据清洗与处理：数据预处理流程
-- 可视化大屏设计：大屏界面设计方案
-- 图表类型与展示：各类图表的使用场景
 
-### 6. 三维电子沙盘方案
-- 三维场景构建：三维场景的构建方法
-- 数据叠加展示：数据在三维场景中的展示
-- 交互操作设计：用户交互操作方式
-- 性能优化策略：性能优化措施
-
-### 7. 项目实施计划
+### 5. 项目实施计划
 - 项目阶段划分：项目实施的阶段划分
 - 里程碑计划：关键里程碑节点
 - 资源投入计划：人力、物力资源投入
 - 风险应对措施：主要风险及应对策略
 
-### 8. 运维保障方案
+### 6. 运维保障方案
 - 系统运维体系：运维组织和管理体系
 - 数据更新机制：数据更新策略和频率
 - 安全保障措施：系统安全保障方案
 
-### 9. 投资概算
+### 7. 投资概算
 - 软硬件采购清单：需要采购的软硬件设备
 - 开发费用估算：开发工作量及费用
 - 运维费用估算：年度运维费用
@@ -539,16 +526,38 @@ class GenerateDocumentWorkflow(BaseWorkflow):
         return "、".join(requirements) if requirements else "无特殊要求"
 
     def _extract_format_settings(self, request: str) -> Dict[str, Any]:
+        """从用户输入中提取格式设置（增强版）"""
         format_settings = DEFAULT_FORMAT.copy()
+        
+        # 字体映射
         font_map = {
-            "宋体": "宋体", "黑体": "黑体", "仿宋": "仿宋",
-            "楷体": "楷体", "微软雅黑": "微软雅黑",
-            "Times New Roman": "Times New Roman", "Arial": "Arial", "Calibri": "Calibri"
+            "宋体": "宋体",
+            "黑体": "黑体", 
+            "仿宋": "仿宋",
+            "楷体": "楷体",
+            "微软雅黑": "微软雅黑",
+            "Times New Roman": "Times New Roman",
+            "Arial": "Arial",
+            "Calibri": "Calibri"
         }
+        
+        # 提取正文字体
         for key, value in font_map.items():
             if key in request:
                 format_settings["font_name"] = value
                 break
+        
+        # 提取标题字体（如果有"黑体标题"或"标题黑体"等关键词）
+        if "黑体标题" in request or "标题黑体" in request:
+            format_settings["heading1_font"] = "黑体"
+            format_settings["heading2_font"] = "黑体"
+            format_settings["heading3_font"] = "黑体"
+        elif "宋体标题" in request or "标题宋体" in request:
+            format_settings["heading1_font"] = "宋体"
+            format_settings["heading2_font"] = "宋体"
+            format_settings["heading3_font"] = "宋体"
+        
+        # 提取字号
         size_patterns = [
             r'(小?[三四]?号|初号|小初|大?一?二?三?四?五?号)',
             r'(\d{1,2})pt'
@@ -560,23 +569,35 @@ class GenerateDocumentWorkflow(BaseWorkflow):
                     size = int(re.search(r'\d+', match.group()).group())
                     if 8 <= size <= 72:
                         format_settings["font_size"] = size
+                        format_settings["heading1_size"] = min(size + 6, 28)
+                        format_settings["heading2_size"] = min(size + 4, 24)
+                        format_settings["heading3_size"] = min(size + 2, 20)
                 except:
                     pass
                 break
+        
+        # 提取对齐方式
         if "居中" in request:
             format_settings["alignment"] = "center"
         elif "右对齐" in request:
             format_settings["alignment"] = "right"
         elif "两端对齐" in request:
             format_settings["alignment"] = "justify"
+        else:
+            format_settings["alignment"] = "left"
+        
+        # 提取行距
         if "1.5倍" in request or "一倍半" in request:
             format_settings["line_spacing"] = 1.5
         elif "双倍" in request or "2倍" in request:
             format_settings["line_spacing"] = 2
         elif "单倍" in request:
             format_settings["line_spacing"] = 1
+        
+        # 提取页面方向
         if "横向" in request or "横版" in request:
             format_settings["page_orientation"] = "landscape"
+        
         return format_settings
 
     def _get_doc_config(self, doc_type: str) -> Dict[str, Any]:
