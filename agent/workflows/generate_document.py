@@ -640,43 +640,55 @@ class GenerateDocumentWorkflow(BaseWorkflow):
         return {"retrieved_docs": mapped_docs}
 
     def _build_custom_prompt(self, state: DocumentState) -> str:
-        """根据提取的信息构建自定义提示词，优先使用 GJB 438C 模板结构"""
+        """根据提取的信息构建自定义提示词，优先使用 DOC_TYPE_MAP 中的结构"""
         config = self._get_doc_config(state["doc_type"])
         style_info = STYLE_CONFIG.get(state["style"], STYLE_CONFIG["标准"])
         emphasis_info = EMPHASIS_CONFIG.get(state["emphasis"], EMPHASIS_CONFIG["质量"])
         fmt = state.get("format_settings", DEFAULT_FORMAT)
-        
-        # ===== 获取模板结构 =====
-        doc_type = state["doc_type"]
-        template_info = GJB_TEMPLATE_MAP.get(doc_type, {})
-        template_path = template_info.get("template_path")
-        
-        # 优先从模板提取结构
-        if template_path and os.path.exists(template_path):
-            template_data = extract_doc_structure_from_template(template_path)
-            structure = template_data.get("structure", "")
-            print(f"✅ 从模板提取结构: {template_path}")
-        else:
-            # 使用默认结构
-            structure = get_default_structure_for_doc_type(doc_type)
-            print(f"⚠️ 使用默认结构: {doc_type}")
-        
-        # 获取自定义 prompt 或构建通用 prompt
-        custom_prompt = config.get("prompt", "")
         product_name = state.get('product_name', '指定产品')
+        doc_type = state.get('doc_type', '质量保证')
         
+        # ===== 1. 优先使用 DOC_TYPE_MAP 中的 structure 和 prompt =====
+        structure = config.get("structure", "")
+        custom_prompt = config.get("prompt", "")
+        
+        # 如果没有 structure，尝试从 GJB 模板提取
+        if not structure:
+            template_info = GJB_TEMPLATE_MAP.get(doc_type)
+            if template_info:
+                template_path = template_info.get("template_path")
+                if template_path and os.path.exists(template_path):
+                    print(f"📄 从 GJB 438C 模板提取结构: {template_path}")
+                    template_data = extract_doc_structure_from_template(template_path)
+                    structure = template_data.get("structure")
+                    if structure and "未提取" not in structure:
+                        print(f"✅ 成功提取模板结构")
+            
+            # 如果还是没有，使用默认结构
+            if not structure:
+                structure = get_default_structure_for_doc_type(doc_type)
+                print(f"⚠️ 使用默认结构: {doc_type}")
+        
+        # ===== 2. 获取文档标题 =====
+        doc_title = config.get('title', doc_type)
+        
+        # ===== 3. 构建最终提示词 =====
         if custom_prompt:
             try:
                 prompt = custom_prompt.format(product_name=product_name)
             except KeyError:
                 prompt = custom_prompt
-            prompt += f"\n\n### 文档结构要求（基于 GJB 438C）\n{structure}"
+            prompt += f"\n\n### 文档结构要求\n{structure}"
             prompt += f"\n\n### 格式要求\n- 正文字体：{fmt.get('font_name', '宋体')}，字号：{fmt.get('font_size', 12)}pt\n- 标题字体：{fmt.get('heading1_font', '黑体')}\n- 行距：{fmt.get('line_spacing', 1.5)}倍\n- 对齐方式：{fmt.get('alignment', '左对齐')}"
         else:
-            prompt = f"""你是一位军用软件开发文档专家。根据 GJB 438C 标准，为产品 **{product_name}** 生成一份**{state['style']}风格**的{config['title']}。
+            # 判断是否使用 GJB 438C 模板
+            template_info = GJB_TEMPLATE_MAP.get(doc_type)
+            gjb_ref = f"GJB 438C-2021《军用软件开发文档通用要求》" if template_info else ""
+            
+            prompt = f"""你是一位军用软件开发文档专家。为产品 **{product_name}** 生成一份 **{doc_title}**。
 
     ## 文档要求
-    - 严格遵循 GJB 438C-2021《军用软件开发文档通用要求》
+    {f"- 严格遵循 {gjb_ref}" if gjb_ref else "- 遵循标准文档格式"}
     - 文档结构必须包含以下章节
 
     ## 文档结构
@@ -699,6 +711,8 @@ class GenerateDocumentWorkflow(BaseWorkflow):
     - 标题字体：{fmt.get('heading1_font', '黑体')}
     - 行距：{fmt.get('line_spacing', 1.5)}倍
     - 对齐方式：{fmt.get('alignment', '左对齐')}
+
+    请确保文档内容专业、完整{f"，符合GJB 438C标准要求" if gjb_ref else ""}。
     """
         
         return prompt
