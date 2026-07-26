@@ -194,33 +194,36 @@ function setConnectionState(type, text) {
 // 应用初始化
 // ============================================
 
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log('应用初始化开始...');
     bindEvents();
     bindInsightCardToggles();
     
-    // 加载场景（使用 scenario.js 中的实现）
-    if (typeof window.loadScenarios === 'function' && window.loadScenarios !== loadScenarios) {
+    // 加载场景
+    if (typeof window.loadScenarios === 'function') {
         await window.loadScenarios();
-    } else {
-        console.warn('window.loadScenarios 不可用，尝试使用 scenario.js');
-        // 尝试调用 scenario.js 中的 loadScenarios
-        if (typeof loadScenarios === 'function') {
-            await loadScenarios();
+    }
+    
+    // ===== 修复：创建或恢复会话 =====
+    var restored = false;
+    if (typeof restoreLatestSessionForScenario === 'function') {
+        restored = await restoreLatestSessionForScenario();
+    }
+    
+    if (!restored) {
+        if (typeof createNewSession === 'function') {
+            await createNewSession();
         }
     }
     
-    // 加载会话
+    // ===== 关键修复：加载历史记录 =====
+    // 方式1：调用 loadSessionCards
     if (typeof loadSessionCards === 'function') {
         loadSessionCards();
     }
-    if (typeof renderSessionCards === 'function') {
-        renderSessionCards();
-    }
-    
-    const restored = await restoreLatestSessionForScenario();
-    if (!restored) {
-        await createNewSession();
+    // 方式2：直接加载（如果 loadSessionCards 不可用）
+    else {
+        loadHistoryDirect();
     }
     
     // 加载模板列表
@@ -230,6 +233,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('应用初始化完成');
 });
 
+// 直接加载历史的函数
+function loadHistoryDirect() {
+    if (!state.sessionId) return;
+    
+    fetch('/api/history/' + state.sessionId)
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            state.historyItems = data.history || [];
+            var historyList = document.getElementById('historyList');
+            if (historyList) {
+                if (state.historyItems.length > 0) {
+                    historyList.innerHTML = state.historyItems.map(function(item) {
+                        return '<div class="history-item">' +
+                            '<div class="history-question">' + (item.question || '') + '</div>' +
+                            '<div class="history-time">' + (item.timestamp || '') + '</div>' +
+                            '</div>';
+                    }).join('');
+                } else {
+                    historyList.innerHTML = '<div style="padding: 12px; color: #999; font-size: 13px; text-align: center;">暂无历史对话</div>';
+                }
+            }
+        })
+        .catch(function(e) { console.warn('加载历史失败:', e); });
+}
 // ============================================
 // 事件绑定
 // ============================================
@@ -308,10 +335,20 @@ function bindInsightCardToggles() {
 // }
 
 function restoreLatestSessionForScenario() {
-    console.log('restoreLatestSessionForScenario 已禁用');
-    return false;
+    console.log('restoreLatestSessionForScenario 被调用');
+    // 从 localStorage 恢复会话
+    var savedSessionId = localStorage.getItem('sessionId');
+    if (savedSessionId) {
+        state.sessionId = savedSessionId;
+        console.log('✅ 从 localStorage 恢复会话:', savedSessionId);
+        // 加载历史
+        if (typeof loadSessionCards === 'function') {
+            loadSessionCards();
+        }
+        return Promise.resolve(true);
+    }
+    return Promise.resolve(false);
 }
-
 // async function createNewSession() {
 //     if (typeof window.createNewSession === 'function') {
 //         return window.createNewSession();
@@ -321,46 +358,37 @@ function restoreLatestSessionForScenario() {
 //
 
 function createNewSession() {
-    console.log('createNewSession 已禁用');
-    return false;
+    console.log('createNewSession 被调用');
+    
+    // 如果已经有 sessionId，使用现有的
+    if (state.sessionId) {
+        console.log('已有会话:', state.sessionId);
+        return Promise.resolve(state.sessionId);
+    }
+    
+    // 生成新的 sessionId
+    var newSessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+    state.sessionId = newSessionId;
+    
+    // 保存到 localStorage
+    localStorage.setItem('sessionId', newSessionId);
+    
+    // 更新会话信息显示
+    var sessionInfo = document.getElementById('sessionInfo');
+    if (sessionInfo) {
+        sessionInfo.textContent = '会话: ' + newSessionId;
+    }
+    
+    console.log('✅ 新会话创建:', newSessionId);
+    
+    // 加载历史（新会话为空）
+    state.historyItems = [];
+    if (typeof renderHistoryList === 'function') {
+        renderHistoryList();
+    }
+    
+    return Promise.resolve(newSessionId);
 }
-
-// ============================================
-// 修复 loadSessionCards - 避免无限递归
-// ============================================
-
-// function loadSessionCards() {
-//     // 防止重复加载
-//     if (state._sessionCardsLoading) {
-//         return;
-//     }
-//     state._sessionCardsLoading = true;
-//     
-//     try {
-//         // 从 API 加载会话卡片
-//         if (typeof window._loadSessionCardsImpl === 'function') {
-//             window._loadSessionCardsImpl();
-//         } else if (typeof loadSessionCardsFromApi === 'function') {
-//             loadSessionCardsFromApi();
-//         } else {
-//             // 简单实现：从 history API 加载
-//             const historyList = document.getElementById('historyList');
-//             if (historyList && state.sessionId) {
-//                 fetch(`/api/history/${state.sessionId}`)
-//                     .then(r => r.json())
-//                     .then(data => {
-//                         state.historyItems = data.history || [];
-//                         renderHistoryList();
-//                     })
-//                     .catch(e => console.warn('加载历史失败:', e));
-//             }
-//         }
-//     } catch (e) {
-//         console.warn('loadSessionCards 执行失败:', e);
-//     }
-//     
-//     state._sessionCardsLoading = false;
-// }
 
 function loadSessionCards() {
     console.log('loadSessionCards 已修复');
@@ -390,13 +418,67 @@ function loadSessionCards() {
     }
 }
 
-function renderSessionCards() {
-//     if (typeof window.renderSessionCards === 'function') {
-//         window.renderSessionCards();
-//     }
-	// 完全禁用，防止递归
-    console.log('renderSessionCards 已禁用');
-    return;
+function loadSessionCards() {
+    console.log('loadSessionCards 被调用');
+    
+    // 防止重复加载
+    if (state._sessionCardsLoading) {
+        console.log('loadSessionCards 正在加载中，跳过');
+        return;
+    }
+    state._sessionCardsLoading = true;
+    
+    try {
+        var historyList = document.getElementById('historyList');
+        if (!historyList) {
+            state._sessionCardsLoading = false;
+            return;
+        }
+        
+        // 如果 sessionId 不存在，不加载
+        if (!state.sessionId) {
+            historyList.innerHTML = '<div style="padding: 12px; color: #999; font-size: 13px; text-align: center;">请先创建会话</div>';
+            state._sessionCardsLoading = false;
+            return;
+        }
+        
+        // 从 API 加载历史
+        fetch('/api/history/' + state.sessionId)
+            .then(function(response) {
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                return response.json();
+            })
+            .then(function(data) {
+                state.historyItems = data.history || [];
+                console.log('加载到 ' + state.historyItems.length + ' 条历史记录');
+                // 直接渲染
+                var historyList2 = document.getElementById('historyList');
+                if (historyList2) {
+                    if (state.historyItems.length > 0) {
+                        historyList2.innerHTML = state.historyItems.map(function(item) {
+                            var question = item.question || '历史记录';
+                            var timestamp = item.timestamp || '';
+                            return '<div class="history-item">' +
+                                '<div class="history-question">' + escapeHtml(question) + '</div>' +
+                                '<div class="history-time">' + escapeHtml(timestamp) + '</div>' +
+                                '</div>';
+                        }).join('');
+                    } else {
+                        historyList2.innerHTML = '<div style="padding: 12px; color: #999; font-size: 13px; text-align: center;">暂无历史对话</div>';
+                    }
+                }
+                state._sessionCardsRendered = true;
+                state._sessionCardsLoading = false;
+            })
+            .catch(function(e) {
+                console.warn('加载历史失败:', e);
+                historyList.innerHTML = '<div style="padding: 12px; color: #999; font-size: 13px; text-align: center;">加载历史失败</div>';
+                state._sessionCardsLoading = false;
+            });
+    } catch (e) {
+        console.warn('loadSessionCards 执行失败:', e);
+        state._sessionCardsLoading = false;
+    }
 }
 
 function clearHistory() {
@@ -467,4 +549,10 @@ function autoResizeInput() {
     input.style.height = Math.min(input.scrollHeight, 120) + 'px';
 }
 
+function escapeHtml(text) {
+    if (!text) return '';
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 console.log('app.js 加载完成');
