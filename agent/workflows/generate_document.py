@@ -199,16 +199,37 @@ class GenerateDocumentWorkflow(BaseWorkflow):
         return "质量保证"
 
     def _extract_product_name(self, request: str) -> str:
+        """从用户输入中提取产品名称（增强版）"""
+        # 匹配模式：为[产品名]生成、[产品名]的、[产品名]系统、[产品名]软件等
         patterns = [
-            r'[为给]?\s*([^\s，,。的]{2,20})\s*产品',
-            r'产品\s*([^\s，,。]{2,20})',
-            r'项目\s*([^\s，,。]{2,20})',
-            r'[为给]\s*([^\s，,。]{2,20})\s*[生制]',
+            # 1. "为XXX生成YYY" 或 "为XXX的YYY"
+            r'[为给]\s*([^\s，,。的]{2,30})\s*[的]?\s*[生制]',
+            # 2. "XXX系统"、"XXX软件"、"XXX产品"
+            r'([^\s，,。]{2,30})\s*(?:系统|软件|产品|平台)',
+            # 3. "XXX生成YYY"（没有"为"字）
+            r'^([^\s，,。]{2,30})\s*[生制]',
+            # 4. "XXX项目" 
+            r'([^\s，,。]{2,30})\s*项目',
+            # 5. 引号中的产品名
+            r'[""「]([^"」]{2,30})[""」]',
         ]
+        
         for pattern in patterns:
             match = re.search(pattern, request)
             if match:
-                return match.group(1).strip()
+                product = match.group(1).strip()
+                # 过滤掉常见非产品词
+                stop_words = ['生成', '开发', '测试', '质量', '配置', '需求', '技术', '审查', '用户', '验收']
+                if product not in stop_words and len(product) >= 2:
+                    return product
+        
+        # 如果提取不到，尝试从"视频监控系统"这种词组中提取
+        # 特殊处理：如果包含"系统"且前面有词
+        sys_match = re.search(r'([^\s，,。]{2,20})\s*系统', request)
+        if sys_match:
+            return sys_match.group(1).strip() + '系统'
+        
+        # 最后使用默认值
         return "指定产品"
 
     def _extract_style(self, request: str) -> str:
