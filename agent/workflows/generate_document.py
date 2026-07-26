@@ -16,6 +16,15 @@ from agent.workflows.base import BaseWorkflow
 from agent.template_manager import TemplateManager
 
 from docx import Document as DocxDocument
+
+# 替换原来的 DOC_TYPE_MAP 导入
+from agent.workflows.doc_types import (
+    DOC_TYPE_MAP,
+    GJB_TEMPLATE_MAP,
+    get_doc_config,
+    get_gjb_template,
+    get_default_structure
+)
 # ============================================
 # GJB 438C 模板文档映射和结构提取
 # ============================================
@@ -72,7 +81,7 @@ def extract_doc_structure_from_template(template_path: str) -> Dict[str, Any]:
         
         # 如果提取不到结构，使用默认结构
         if not sections:
-            structure_lines = get_default_structure_for_doc_type(None)
+            structure_lines = get_default_structure(None)
             sections = []
         
         return {
@@ -84,152 +93,7 @@ def extract_doc_structure_from_template(template_path: str) -> Dict[str, Any]:
         print(f"提取模板结构失败: {e}")
         return {"structure": "无法提取模板结构，请使用通用结构", "sections": []}
 
-def get_default_structure_for_doc_type(doc_type: str) -> str:
-    """获取文档类型的默认结构"""
-    default_structures = {
-        "开发计划": """1. 范围
-   1.1 标识
-   1.2 系统概述
-   1.3 文档概述
-   1.4 与其它计划的关系
-2. 引用文档
-3. 策划背景概述
-4. 实施整个软件开发活动的计划
-   4.1 软件开发过程
-   4.2 软件开发总体计划
-5. 实施详细软件开发活动的计划
-   5.1 项目计划及监督
-   5.2 建立软件开发环境
-6. 进度安排及活动网络
-7. 项目的组织和资源""",
-        "质量保证": """1. 范围
-   1.1 标识
-   1.2 系统概述
-   1.3 文档概述
-   1.4 与其他计划之间的关系
-2. 引用文档
-3. 质量保证组织
-4. 质量目标
-5. 研制开发过程中的质量保证
-6. 交付使用、售后服务的质量保证
-7. 日程表
-8. 质量审核和质量监督""",
-        "技术方案": """1. 范围
-   1.1 标识
-   1.2 系统概述
-   1.3 文档概述
-2. 引用文档
-3. 总体方案与结构
-4. 模型设计方案
-5. 资源配置方案
-6. 系统配置方案
-7. 接口配置方案
-8. 组织机构及人员配置
-9. 关键技术
-10. 方案实施的技术路线和实施计划
-11. 经费概算及规划""",
-        "需求规格": """1. 范围
-   1.1 标识
-   1.2 系统概述
-   1.3 文档概述
-2. 引用文档
-3. 需求
-   3.1 要求的状态和方式
-   3.2 软件能力需求
-   3.3 软件外部接口需求
-4. 合格性规定
-5. 需求可追踪性""",
-        "配置管理": """1. 范围
-   1.1 标识
-   1.2 系统概述
-   1.3 文档概述
-   1.4 与其他计划之间的关系
-2. 引用文档
-3. 组织和职责
-4. 一般要求
-5. 软件配置管理活动
-6. 工具、技术和方法
-7. 对供货单位的控制
-8. 进度表""",
-        "项目建设方案": """1. 项目概述
-2. 需求分析
-3. 总体建设方案
-4. 软件设计方案
-5. 项目实施计划
-6. 运维保障方案
-7. 投资概算"""
-    }
-    return default_structures.get(doc_type, default_structures.get("质量保证"))
 
-# GJB 438C 模板文档路径映射
-GJB_TEMPLATE_MAP = {
-    "技术方案": {
-        "doc_type": "技术方案",
-        "template_path": "scenarios/military_software_438c/data/技术方案/[01]软件总体技术方案-438C.docx",
-        "title": "软件总体技术方案",
-        "gjb_section": "GJB 438C"
-    },
-    "开发计划": {
-        "doc_type": "开发计划",
-        "template_path": "scenarios/military_software_438c/data/开发计划/[02]软件开发计划-438C（共25页）.docx",
-        "title": "软件开发计划",
-        "gjb_section": "GJB 438C"
-    },
-    "配置管理": {
-        "doc_type": "配置管理",
-        "template_path": "scenarios/military_software_438c/data/配置管理/[03]软件配置管理计划-438C.docx",
-        "title": "软件配置管理计划",
-        "gjb_section": "GJB 438C"
-    },
-    "质量保证": {
-        "doc_type": "质量保证",
-        "template_path": "scenarios/military_software_438c/data/质量保证/[04]软件质量保证计划-438C.docx",
-        "title": "软件质量保证计划",
-        "gjb_section": "GJB 438C"
-    },
-    "需求规格": {
-        "doc_type": "需求规格",
-        "template_path": "scenarios/military_software_438c/data/需求规格/[08]软件需求规格说明-438C.docx",
-        "title": "软件需求规格说明",
-        "gjb_section": "GJB 438C"
-    },
-    "标准化": {
-        "doc_type": "标准化",
-        "template_path": "scenarios/military_software_438c/data/标准化/[05]软件标准化大纲-438C（21页）.docx",
-        "title": "软件标准化大纲",
-        "gjb_section": "GJB 438C"
-    },
-    "可靠性": {
-        "doc_type": "可靠性",
-        "template_path": "scenarios/military_software_438c/data/可靠性/[06]可靠性和可维护性大纲-438C.docx",
-        "title": "软件可靠性和可维护性大纲",
-        "gjb_section": "GJB 438C"
-    },
-    "安全性": {
-        "doc_type": "安全性",
-        "template_path": "scenarios/military_software_438c/data/安全性/[07]安全性大纲-438C.docx",
-        "title": "软件安全性大纲",
-        "gjb_section": "GJB 438C"
-    },
-    "审查报告": {
-        "doc_type": "审查报告",
-        "template_path": None,  # 使用通用模板
-        "title": "技术审查报告",
-        "gjb_section": "GJB 438C"
-    },
-    "用户手册": {
-        "doc_type": "用户手册",
-        "template_path": None,
-        "title": "软件用户手册",
-        "gjb_section": "GJB 438C"
-    },
-    "项目建设方案": {
-        "doc_type": "项目建设方案",
-        "template_path": "scenarios/enterprise_knowledge/data/项目建设方案.docx",  # 如果有模板
-        "title": "项目建设方案",
-        "gjb_section": "通用"
-    }
-}
 # ============================================
 # 文档状态定义
 # ============================================
@@ -271,151 +135,6 @@ DEFAULT_FORMAT = {
     "table_style": "Light Grid Accent 1",
     "page_orientation": "portrait"
 }
-
-
-# ============================================
-# 文档类型映射
-# ============================================
-
-DOC_TYPE_MAP = {
-    "质量保证": {
-        "keywords": ["质量保证计划", "质量计划", "SQAP", "质量保证"],
-        "title": "软件质量保证计划",
-    },
-    "开发计划": {
-        "keywords": ["开发计划", "软件开发计划", "项目计划"],
-        "title": "软件开发计划",
-    },
-    "配置管理": {
-        "keywords": ["配置管理计划", "配置计划", "配置管理"],
-        "title": "软件配置管理计划",
-    },
-    "需求规格": {
-        "keywords": ["需求规格说明", "需求规格", "SRS", "需求", "功能需求"],
-        "title": "软件需求规格说明",
-    },
-    "技术方案": {
-        "keywords": ["总体技术方案", "技术方案", "架构设计"],
-        "title": "软件总体技术方案",
-    },
-    "审查报告": {
-        "keywords": ["审查报告", "技术审查", "评审报告"],
-        "title": "技术审查报告",
-    },
-    "测试用例": {
-        "keywords": ["测试用例", "测试计划", "测试"],
-        "title": "软件测试用例文档",
-    },
-    "验收报告": {
-        "keywords": ["验收报告", "验收", "交付验收"],
-        "title": "软件验收报告",
-    },
-    "用户手册": {
-        "keywords": ["用户手册", "使用手册", "操作手册"],
-        "title": "软件用户手册",
-    },
-    "项目建设方案": {
-        "keywords": ["项目建设方案", "建设方案", "项目方案", "实施方案"],
-        "title": "项目建设方案",
-        "structure": """1. 项目概述
-   1.1 项目背景
-   1.2 项目建设目标
-   1.3 项目范围
-   1.4 项目总投资估算
-2. 需求分析
-   2.1 业务需求
-   2.2 用户需求
-   2.3 功能需求
-   2.4 非功能需求
-3. 总体建设方案
-   3.1 建设原则
-   3.2 技术架构
-   3.3 应用架构
-   3.4 数据架构
-   3.5 安全架构
-4. 软件设计方案
-   4.1 数据可视化系统设计
-   4.2 三维电子沙盘软件设计
-   4.3 各子系统功能模块
-   4.4 系统集成方案
-5. 数据可视化方案
-   5.1 数据源接入
-   5.2 数据清洗与处理
-   5.3 可视化大屏设计
-   5.4 图表类型与展示
-6. 三维电子沙盘方案
-   6.1 三维场景构建
-   6.2 数据叠加展示
-   6.3 交互操作设计
-   6.4 性能优化策略
-7. 项目实施计划
-   7.1 项目阶段划分
-   7.2 里程碑计划
-   7.3 资源投入计划
-   7.4 风险应对措施
-8. 运维保障方案
-   8.1 系统运维体系
-   8.2 数据更新机制
-   8.3 安全保障措施
-9. 投资概算
-   9.1 软硬件采购清单
-   9.2 开发费用估算
-   9.3 运维费用估算""",
-        "prompt": """你是一位资深信息化项目咨询专家。根据提取的文档内容和用户要求，为 **{product_name}** 生成一份专业的项目建设方案。
-
-## 文档结构要求
-
-### 1. 项目概述
-- 项目背景：阐述项目建设的原因和必要性
-- 项目建设目标：明确项目要达到的具体目标
-- 项目范围：界定项目建设的边界和范围
-- 项目总投资估算：提供投资概算金额
-
-### 2. 需求分析
-- 业务需求：用户的业务需求描述
-- 用户需求：各类用户的具体需求
-- 功能需求：系统应具备的功能
-- 非功能需求：性能、安全、可靠性等要求
-
-### 3. 总体建设方案
-- 建设原则：项目建设遵循的原则
-- 技术架构：总体技术架构设计
-- 应用架构：应用系统的组成和关系
-- 数据架构：数据模型和数据流转
-- 安全架构：安全保障体系设计
-
-### 4. 软件设计方案
-- 数据可视化系统设计：可视化系统架构和功能
-- 三维电子沙盘软件设计：沙盘软件的设计方案
-- 各子系统功能模块：各功能模块详细设计
-- 系统集成方案：系统间的集成方式
-
-
-### 5. 项目实施计划
-- 项目阶段划分：项目实施的阶段划分
-- 里程碑计划：关键里程碑节点
-- 资源投入计划：人力、物力资源投入
-- 风险应对措施：主要风险及应对策略
-
-### 6. 运维保障方案
-- 系统运维体系：运维组织和管理体系
-- 数据更新机制：数据更新策略和频率
-- 安全保障措施：系统安全保障方案
-
-### 7. 投资概算
-- 软硬件采购清单：需要采购的软硬件设备
-- 开发费用估算：开发工作量及费用
-- 运维费用估算：年度运维费用
-
-## 格式要求
-- 使用标准章节编号（1. 2. 3. ...）
-- 关键内容使用表格呈现
-- 重要数据使用加粗标注
-- 专业术语需定义说明
-- 内容应具备可操作性"""
-    }
-}
-
 
 # ============================================
 # 风格配置
@@ -640,7 +359,7 @@ class GenerateDocumentWorkflow(BaseWorkflow):
         return {"retrieved_docs": mapped_docs}
 
     def _build_custom_prompt(self, state: DocumentState) -> str:
-        """根据提取的信息构建自定义提示词，优先使用 DOC_TYPE_MAP 中的结构"""
+        """根据提取的信息构建自定义提示词，严格遵循 GJB 438C 模板大纲"""
         config = self._get_doc_config(state["doc_type"])
         style_info = STYLE_CONFIG.get(state["style"], STYLE_CONFIG["标准"])
         emphasis_info = EMPHASIS_CONFIG.get(state["emphasis"], EMPHASIS_CONFIG["质量"])
@@ -648,11 +367,10 @@ class GenerateDocumentWorkflow(BaseWorkflow):
         product_name = state.get('product_name', '指定产品')
         doc_type = state.get('doc_type', '质量保证')
         
-        # ===== 1. 优先使用 DOC_TYPE_MAP 中的 structure 和 prompt =====
+        # ===== 1. 获取文档大纲结构 =====
         structure = config.get("structure", "")
-        custom_prompt = config.get("prompt", "")
         
-        # 如果没有 structure，尝试从 GJB 模板提取
+        # 如果 DOC_TYPE_MAP 中没有 structure，从 GJB 模板提取
         if not structure:
             template_info = GJB_TEMPLATE_MAP.get(doc_type)
             if template_info:
@@ -663,42 +381,37 @@ class GenerateDocumentWorkflow(BaseWorkflow):
                     structure = template_data.get("structure")
                     if structure and "未提取" not in structure:
                         print(f"✅ 成功提取模板结构")
-            
-            # 如果还是没有，使用默认结构
-            if not structure:
-                structure = get_default_structure_for_doc_type(doc_type)
-                print(f"⚠️ 使用默认结构: {doc_type}")
+        
+        # 如果还是没有，使用默认结构
+        if not structure:
+            structure = get_default_structure(doc_type)
+            print(f"⚠️ 使用默认结构: {doc_type}")
         
         # ===== 2. 获取文档标题 =====
         doc_title = config.get('title', doc_type)
         
-        # ===== 3. 构建最终提示词 =====
-        if custom_prompt:
-            try:
-                prompt = custom_prompt.format(product_name=product_name)
-            except KeyError:
-                prompt = custom_prompt
-            prompt += f"\n\n### 文档结构要求\n{structure}"
-            prompt += f"\n\n### 格式要求\n- 正文字体：{fmt.get('font_name', '宋体')}，字号：{fmt.get('font_size', 12)}pt\n- 标题字体：{fmt.get('heading1_font', '黑体')}\n- 行距：{fmt.get('line_spacing', 1.5)}倍\n- 对齐方式：{fmt.get('alignment', '左对齐')}"
-        else:
-            # 判断是否使用 GJB 438C 模板
-            template_info = GJB_TEMPLATE_MAP.get(doc_type)
-            gjb_ref = f"GJB 438C-2021《军用软件开发文档通用要求》" if template_info else ""
-            
-            prompt = f"""你是一位军用软件开发文档专家。为产品 **{product_name}** 生成一份 **{doc_title}**。
+        # ===== 3. 构建最终提示词（严格遵循模板大纲） =====
+        template_info = GJB_TEMPLATE_MAP.get(doc_type)
+        gjb_ref = f"GJB 438C-2021《军用软件开发文档通用要求》" if template_info else ""
+        
+        prompt = f"""你是一位军用软件开发文档专家。请严格按照以下大纲结构，为产品 **{product_name}** 生成一份完整的 {doc_title}。
 
-    ## 文档要求
-    {f"- 严格遵循 {gjb_ref}" if gjb_ref else "- 遵循标准文档格式"}
-    - 文档结构必须包含以下章节
+    ## 重要要求
+    1. **严格遵循文档结构**：必须按照下面的文档结构逐章编写，不得增删章节
+    2. **章节编号一致**：保持与模板相同的章节编号（1. 1.1 1.2 等）
+    3. **内容填充**：每个章节下根据 {product_name} 的具体情况填充实质性内容
+    4. **格式规范**：使用标准的文档格式，关键信息用表格呈现
+    {f"- 5. **遵循 {gjb_ref} 标准**" if gjb_ref else ""}
 
-    ## 文档结构
+    ## 文档结构（必须严格遵循）
     {structure}
 
     ## 内容要求
-    - 每个章节必须包含实质性内容
+    - 每个章节必须包含实质性内容，不能为空
     - 内容应与产品 **{product_name}** 的具体情况相关
     - 专业术语需定义说明
     - 关键信息应使用表格呈现
+    - 涉及具体数据的部分，使用合理假设值
 
     **文档风格要求**：{style_info['prompt_suffix']}
 
@@ -706,13 +419,7 @@ class GenerateDocumentWorkflow(BaseWorkflow):
 
     **特殊要求**：{state['special_requirements']}
 
-    **格式要求**：
-    - 正文字体：{fmt.get('font_name', '宋体')}，字号：{fmt.get('font_size', 12)}pt
-    - 标题字体：{fmt.get('heading1_font', '黑体')}
-    - 行距：{fmt.get('line_spacing', 1.5)}倍
-    - 对齐方式：{fmt.get('alignment', '左对齐')}
-
-    请确保文档内容专业、完整{f"，符合GJB 438C标准要求" if gjb_ref else ""}。
+    请严格按照以上大纲结构生成文档，确保章节完整、内容专业。
     """
         
         return prompt
