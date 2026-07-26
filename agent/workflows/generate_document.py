@@ -15,21 +15,246 @@ from agent.tools.rag_tool import RAGTool
 from agent.workflows.base import BaseWorkflow
 from agent.template_manager import TemplateManager
 
+from docx import Document as DocxDocument
+# ============================================
+# GJB 438C 模板文档映射和结构提取
+# ============================================
+
+def extract_doc_structure_from_template(template_path: str) -> Dict[str, Any]:
+    """从 Word 模板中提取文档结构（章节标题和层级）"""
+    if not template_path or not os.path.exists(template_path):
+        return {"structure": "未找到模板文档，请使用通用结构", "sections": []}
+    
+    try:
+        doc = DocxDocument(template_path)
+        sections = []
+        current_level = 0
+        structure_lines = []
+        
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if not text:
+                continue
+            
+            # 检测标题（通过样式或格式判断）
+            # 简单判断：如果文本以数字开头或包含"章"、"节"等
+            if para.style.name and 'Heading' in para.style.name:
+                level = int(para.style.name.replace('Heading', '').strip()) if para.style.name.replace('Heading', '').strip().isdigit() else 1
+                # 限制最大层级
+                if level > 5:
+                    level = 5
+                sections.append({
+                    "level": level,
+                    "title": text,
+                    "content": ""
+                })
+                # 生成结构描述
+                indent = "  " * (level - 1)
+                structure_lines.append(f"{indent}{text}")
+            elif text.startswith('第') and ('章' in text or '节' in text):
+                # 中文章节标题
+                level = 1 if '章' in text else 2
+                sections.append({
+                    "level": level,
+                    "title": text,
+                    "content": ""
+                })
+                indent = "  " * (level - 1)
+                structure_lines.append(f"{indent}{text}")
+            elif text and len(text) < 50 and (text.isupper() or text[0].isdigit()):
+                # 可能是标题
+                sections.append({
+                    "level": 1,
+                    "title": text,
+                    "content": ""
+                })
+                structure_lines.append(text)
+        
+        # 如果提取不到结构，使用默认结构
+        if not sections:
+            structure_lines = get_default_structure_for_doc_type(None)
+            sections = []
+        
+        return {
+            "structure": "\n".join(structure_lines),
+            "sections": sections,
+            "raw_text": "\n".join([p.text for p in doc.paragraphs[:50]])
+        }
+    except Exception as e:
+        print(f"提取模板结构失败: {e}")
+        return {"structure": "无法提取模板结构，请使用通用结构", "sections": []}
+
+def get_default_structure_for_doc_type(doc_type: str) -> str:
+    """获取文档类型的默认结构"""
+    default_structures = {
+        "开发计划": """1. 范围
+   1.1 标识
+   1.2 系统概述
+   1.3 文档概述
+   1.4 与其它计划的关系
+2. 引用文档
+3. 策划背景概述
+4. 实施整个软件开发活动的计划
+   4.1 软件开发过程
+   4.2 软件开发总体计划
+5. 实施详细软件开发活动的计划
+   5.1 项目计划及监督
+   5.2 建立软件开发环境
+6. 进度安排及活动网络
+7. 项目的组织和资源""",
+        "质量保证": """1. 范围
+   1.1 标识
+   1.2 系统概述
+   1.3 文档概述
+   1.4 与其他计划之间的关系
+2. 引用文档
+3. 质量保证组织
+4. 质量目标
+5. 研制开发过程中的质量保证
+6. 交付使用、售后服务的质量保证
+7. 日程表
+8. 质量审核和质量监督""",
+        "技术方案": """1. 范围
+   1.1 标识
+   1.2 系统概述
+   1.3 文档概述
+2. 引用文档
+3. 总体方案与结构
+4. 模型设计方案
+5. 资源配置方案
+6. 系统配置方案
+7. 接口配置方案
+8. 组织机构及人员配置
+9. 关键技术
+10. 方案实施的技术路线和实施计划
+11. 经费概算及规划""",
+        "需求规格": """1. 范围
+   1.1 标识
+   1.2 系统概述
+   1.3 文档概述
+2. 引用文档
+3. 需求
+   3.1 要求的状态和方式
+   3.2 软件能力需求
+   3.3 软件外部接口需求
+4. 合格性规定
+5. 需求可追踪性""",
+        "配置管理": """1. 范围
+   1.1 标识
+   1.2 系统概述
+   1.3 文档概述
+   1.4 与其他计划之间的关系
+2. 引用文档
+3. 组织和职责
+4. 一般要求
+5. 软件配置管理活动
+6. 工具、技术和方法
+7. 对供货单位的控制
+8. 进度表""",
+        "项目建设方案": """1. 项目概述
+2. 需求分析
+3. 总体建设方案
+4. 软件设计方案
+5. 数据可视化方案
+6. 三维电子沙盘方案
+7. 项目实施计划
+8. 运维保障方案
+9. 投资概算"""
+    }
+    return default_structures.get(doc_type, default_structures.get("质量保证"))
+
+# GJB 438C 模板文档路径映射
+GJB_TEMPLATE_MAP = {
+    "技术方案": {
+        "doc_type": "技术方案",
+        "template_path": "scenarios/military_software_438c/data/技术方案/[01]软件总体技术方案-438C.docx",
+        "title": "软件总体技术方案",
+        "gjb_section": "GJB 438C"
+    },
+    "开发计划": {
+        "doc_type": "开发计划",
+        "template_path": "scenarios/military_software_438c/data/开发计划/[02]软件开发计划-438C（共25页）.docx",
+        "title": "软件开发计划",
+        "gjb_section": "GJB 438C"
+    },
+    "配置管理": {
+        "doc_type": "配置管理",
+        "template_path": "scenarios/military_software_438c/data/配置管理/[03]软件配置管理计划-438C.docx",
+        "title": "软件配置管理计划",
+        "gjb_section": "GJB 438C"
+    },
+    "质量保证": {
+        "doc_type": "质量保证",
+        "template_path": "scenarios/military_software_438c/data/质量保证/[04]软件质量保证计划-438C.docx",
+        "title": "软件质量保证计划",
+        "gjb_section": "GJB 438C"
+    },
+    "需求规格": {
+        "doc_type": "需求规格",
+        "template_path": "scenarios/military_software_438c/data/需求规格/[08]软件需求规格说明-438C.docx",
+        "title": "软件需求规格说明",
+        "gjb_section": "GJB 438C"
+    },
+    "标准化": {
+        "doc_type": "标准化",
+        "template_path": "scenarios/military_software_438c/data/标准化/[05]软件标准化大纲-438C（21页）.docx",
+        "title": "软件标准化大纲",
+        "gjb_section": "GJB 438C"
+    },
+    "可靠性": {
+        "doc_type": "可靠性",
+        "template_path": "scenarios/military_software_438c/data/可靠性/[06]可靠性和可维护性大纲-438C.docx",
+        "title": "软件可靠性和可维护性大纲",
+        "gjb_section": "GJB 438C"
+    },
+    "安全性": {
+        "doc_type": "安全性",
+        "template_path": "scenarios/military_software_438c/data/安全性/[07]安全性大纲-438C.docx",
+        "title": "软件安全性大纲",
+        "gjb_section": "GJB 438C"
+    },
+    "审查报告": {
+        "doc_type": "审查报告",
+        "template_path": None,  # 使用通用模板
+        "title": "技术审查报告",
+        "gjb_section": "GJB 438C"
+    },
+    "用户手册": {
+        "doc_type": "用户手册",
+        "template_path": None,
+        "title": "软件用户手册",
+        "gjb_section": "GJB 438C"
+    },
+    "项目建设方案": {
+        "doc_type": "项目建设方案",
+        "template_path": "scenarios/enterprise_knowledge/data/项目建设方案.docx",  # 如果有模板
+        "title": "项目建设方案",
+        "gjb_section": "通用"
+    }
+}
+# ============================================
+# 文档状态定义
+# ============================================
+
 class DocumentState(TypedDict):
     user_request: str
     doc_type: str
     product_name: str
-    style: str          # 文档风格：简略/标准/详细
-    emphasis: str       # 侧重点：风险/质量/进度/安全
-    special_requirements: str  # 特殊要求
-    format_settings: Dict[str, Any]  # 新增：格式设置
+    style: str
+    emphasis: str
+    special_requirements: str
+    format_settings: Dict[str, Any]
     retrieved_docs: List[Dict[str, Any]]
     doc_content: str
     doc_path: str
     messages: Annotated[List, operator.add]
     error: str
 
+
+# ============================================
 # 默认格式配置
+# ============================================
+
 DEFAULT_FORMAT = {
     "font_name": "宋体",
     "font_size": 12,
@@ -44,12 +269,16 @@ DEFAULT_FORMAT = {
     "margin_bottom": 2.54,
     "margin_left": 3.17,
     "margin_right": 3.17,
-    "alignment": "left",  # left, center, justify
+    "alignment": "left",
     "table_style": "Light Grid Accent 1",
-    "page_orientation": "portrait"  # portrait, landscape
+    "page_orientation": "portrait"
 }
 
+
+# ============================================
 # 文档类型映射
+# ============================================
+
 DOC_TYPE_MAP = {
     "质量保证": {
         "keywords": ["质量保证计划", "质量计划", "SQAP", "质量保证"],
@@ -86,10 +315,125 @@ DOC_TYPE_MAP = {
     "用户手册": {
         "keywords": ["用户手册", "使用手册", "操作手册"],
         "title": "软件用户手册",
+    },
+    "项目建设方案": {
+        "keywords": ["项目建设方案", "建设方案", "项目方案", "实施方案"],
+        "title": "项目建设方案",
+        "structure": """1. 项目概述
+   1.1 项目背景
+   1.2 项目建设目标
+   1.3 项目范围
+   1.4 项目总投资估算
+2. 需求分析
+   2.1 业务需求
+   2.2 用户需求
+   2.3 功能需求
+   2.4 非功能需求
+3. 总体建设方案
+   3.1 建设原则
+   3.2 技术架构
+   3.3 应用架构
+   3.4 数据架构
+   3.5 安全架构
+4. 软件设计方案
+   4.1 数据可视化系统设计
+   4.2 三维电子沙盘软件设计
+   4.3 各子系统功能模块
+   4.4 系统集成方案
+5. 数据可视化方案
+   5.1 数据源接入
+   5.2 数据清洗与处理
+   5.3 可视化大屏设计
+   5.4 图表类型与展示
+6. 三维电子沙盘方案
+   6.1 三维场景构建
+   6.2 数据叠加展示
+   6.3 交互操作设计
+   6.4 性能优化策略
+7. 项目实施计划
+   7.1 项目阶段划分
+   7.2 里程碑计划
+   7.3 资源投入计划
+   7.4 风险应对措施
+8. 运维保障方案
+   8.1 系统运维体系
+   8.2 数据更新机制
+   8.3 安全保障措施
+9. 投资概算
+   9.1 软硬件采购清单
+   9.2 开发费用估算
+   9.3 运维费用估算""",
+        "prompt": """你是一位资深信息化项目咨询专家。根据提取的文档内容和用户要求，为 **{product_name}** 生成一份专业的项目建设方案。
+
+## 文档结构要求
+
+### 1. 项目概述
+- 项目背景：阐述项目建设的原因和必要性
+- 项目建设目标：明确项目要达到的具体目标
+- 项目范围：界定项目建设的边界和范围
+- 项目总投资估算：提供投资概算金额
+
+### 2. 需求分析
+- 业务需求：用户的业务需求描述
+- 用户需求：各类用户的具体需求
+- 功能需求：系统应具备的功能
+- 非功能需求：性能、安全、可靠性等要求
+
+### 3. 总体建设方案
+- 建设原则：项目建设遵循的原则
+- 技术架构：总体技术架构设计
+- 应用架构：应用系统的组成和关系
+- 数据架构：数据模型和数据流转
+- 安全架构：安全保障体系设计
+
+### 4. 软件设计方案
+- 数据可视化系统设计：可视化系统架构和功能
+- 三维电子沙盘软件设计：沙盘软件的设计方案
+- 各子系统功能模块：各功能模块详细设计
+- 系统集成方案：系统间的集成方式
+
+### 5. 数据可视化方案
+- 数据源接入：各类数据源接入方式
+- 数据清洗与处理：数据预处理流程
+- 可视化大屏设计：大屏界面设计方案
+- 图表类型与展示：各类图表的使用场景
+
+### 6. 三维电子沙盘方案
+- 三维场景构建：三维场景的构建方法
+- 数据叠加展示：数据在三维场景中的展示
+- 交互操作设计：用户交互操作方式
+- 性能优化策略：性能优化措施
+
+### 7. 项目实施计划
+- 项目阶段划分：项目实施的阶段划分
+- 里程碑计划：关键里程碑节点
+- 资源投入计划：人力、物力资源投入
+- 风险应对措施：主要风险及应对策略
+
+### 8. 运维保障方案
+- 系统运维体系：运维组织和管理体系
+- 数据更新机制：数据更新策略和频率
+- 安全保障措施：系统安全保障方案
+
+### 9. 投资概算
+- 软硬件采购清单：需要采购的软硬件设备
+- 开发费用估算：开发工作量及费用
+- 运维费用估算：年度运维费用
+
+## 格式要求
+- 使用标准章节编号（1. 2. 3. ...）
+- 关键内容使用表格呈现
+- 重要数据使用加粗标注
+- 专业术语需定义说明
+- 内容应具备可操作性"""
     }
 }
 
+
+# ============================================
 # 风格配置
+# ============================================
+
 STYLE_CONFIG = {
     "简略": {
         "max_sections": 3,
@@ -108,7 +452,6 @@ STYLE_CONFIG = {
     }
 }
 
-# 侧重点配置
 EMPHASIS_CONFIG = {
     "风险": {
         "prompt_suffix": "重点关注风险识别、风险评估、风险应对和风险监控，在每个部分突出风险相关内容。"
@@ -127,6 +470,11 @@ EMPHASIS_CONFIG = {
     }
 }
 
+
+# ============================================
+# 工作流主类
+# ============================================
+
 class GenerateDocumentWorkflow(BaseWorkflow):
     """通用文档生成工作流"""
 
@@ -138,7 +486,6 @@ class GenerateDocumentWorkflow(BaseWorkflow):
         self.app = self.graph.compile(checkpointer=self.memory)
 
     def _extract_doc_type(self, request: str) -> str:
-        """从用户输入中提取文档类型"""
         for doc_type, config in DOC_TYPE_MAP.items():
             for keyword in config["keywords"]:
                 if keyword in request:
@@ -146,7 +493,6 @@ class GenerateDocumentWorkflow(BaseWorkflow):
         return "质量保证"
 
     def _extract_product_name(self, request: str) -> str:
-        """从用户输入中提取产品名称"""
         patterns = [
             r'[为给]?\s*([^\s，,。的]{2,20})\s*产品',
             r'产品\s*([^\s，,。]{2,20})',
@@ -160,7 +506,6 @@ class GenerateDocumentWorkflow(BaseWorkflow):
         return "指定产品"
 
     def _extract_style(self, request: str) -> str:
-        """从用户输入中提取文档风格"""
         if "简略" in request or "简要" in request or "概述" in request:
             return "简略"
         elif "详细" in request or "完整" in request or "详尽" in request:
@@ -168,7 +513,6 @@ class GenerateDocumentWorkflow(BaseWorkflow):
         return "标准"
 
     def _extract_emphasis(self, request: str) -> str:
-        """从用户输入中提取侧重点"""
         if "风险" in request or "风险控制" in request:
             return "风险"
         elif "质量" in request or "质量控制" in request:
@@ -182,7 +526,6 @@ class GenerateDocumentWorkflow(BaseWorkflow):
         return "质量"
 
     def _extract_special_requirements(self, request: str) -> str:
-        """从用户输入中提取特殊要求"""
         special_terms = [
             "符合GJB", "符合标准", "满足规范",
             "强调", "突出", "重点关注",
@@ -196,28 +539,16 @@ class GenerateDocumentWorkflow(BaseWorkflow):
         return "、".join(requirements) if requirements else "无特殊要求"
 
     def _extract_format_settings(self, request: str) -> Dict[str, Any]:
-        """从用户输入中提取格式设置"""
         format_settings = DEFAULT_FORMAT.copy()
-        
-        # 字体映射
         font_map = {
-            "宋体": "宋体",
-            "黑体": "黑体",
-            "仿宋": "仿宋",
-            "楷体": "楷体",
-            "微软雅黑": "微软雅黑",
-            "Times New Roman": "Times New Roman",
-            "Arial": "Arial",
-            "Calibri": "Calibri"
+            "宋体": "宋体", "黑体": "黑体", "仿宋": "仿宋",
+            "楷体": "楷体", "微软雅黑": "微软雅黑",
+            "Times New Roman": "Times New Roman", "Arial": "Arial", "Calibri": "Calibri"
         }
-        
-        # 提取字体
         for key, value in font_map.items():
             if key in request:
                 format_settings["font_name"] = value
                 break
-        
-        # 提取字号（常见字号）
         size_patterns = [
             r'(小?[三四]?号|初号|小初|大?一?二?三?四?五?号)',
             r'(\d{1,2})pt'
@@ -232,54 +563,39 @@ class GenerateDocumentWorkflow(BaseWorkflow):
                 except:
                     pass
                 break
-        
-        # 提取对齐方式
         if "居中" in request:
             format_settings["alignment"] = "center"
         elif "右对齐" in request:
             format_settings["alignment"] = "right"
         elif "两端对齐" in request:
             format_settings["alignment"] = "justify"
-        else:
-            format_settings["alignment"] = "left"
-        
-        # 提取行距
         if "1.5倍" in request or "一倍半" in request:
             format_settings["line_spacing"] = 1.5
         elif "双倍" in request or "2倍" in request:
             format_settings["line_spacing"] = 2
         elif "单倍" in request:
             format_settings["line_spacing"] = 1
-        
-        # 提取页面方向
         if "横向" in request or "横版" in request:
             format_settings["page_orientation"] = "landscape"
-        
         return format_settings
 
     def _get_doc_config(self, doc_type: str) -> Dict[str, Any]:
-        """获取文档配置"""
         return DOC_TYPE_MAP.get(doc_type, DOC_TYPE_MAP["质量保证"])
 
     def _build_graph(self):
-        """构建 LangGraph 状态图"""
         graph = StateGraph(DocumentState)
-
         graph.add_node("extract_info", self.extract_info)
         graph.add_node("retrieve_docs", self.retrieve_docs)
         graph.add_node("generate_document", self.generate_document)
         graph.add_node("save_document", self.save_document)
-
         graph.set_entry_point("extract_info")
         graph.add_edge("extract_info", "retrieve_docs")
         graph.add_edge("retrieve_docs", "generate_document")
         graph.add_edge("generate_document", "save_document")
         graph.add_edge("save_document", END)
-
         return graph
 
     def extract_info(self, state: DocumentState) -> Dict[str, Any]:
-        """提取文档类型、产品名称、风格、侧重点、特殊要求和格式设置"""
         request = state["user_request"]
         return {
             "doc_type": self._extract_doc_type(request),
@@ -291,7 +607,6 @@ class GenerateDocumentWorkflow(BaseWorkflow):
         }
 
     def retrieve_docs(self, state: DocumentState) -> Dict[str, Any]:
-        """检索相关文档"""
         config = self._get_doc_config(state["doc_type"])
         query = f"{config['title']} {state['product_name']} {state['emphasis']}"
         docs = self.rag_tool.retrieve(query, top_k=5)
@@ -304,97 +619,70 @@ class GenerateDocumentWorkflow(BaseWorkflow):
         return {"retrieved_docs": mapped_docs}
 
     def _build_custom_prompt(self, state: DocumentState) -> str:
-        """根据提取的信息构建自定义提示词"""
+        """根据提取的信息构建自定义提示词，优先使用 GJB 438C 模板结构"""
         config = self._get_doc_config(state["doc_type"])
         style_info = STYLE_CONFIG.get(state["style"], STYLE_CONFIG["标准"])
         emphasis_info = EMPHASIS_CONFIG.get(state["emphasis"], EMPHASIS_CONFIG["质量"])
-        
-        # 基础文档结构
-        base_structures = {
-            "质量保证": """1. 文档概述（编写目的、适用范围、参考文档）
-2. 质量目标
-3. 质量保证活动（评审、审核、测试）
-4. 质量标准
-5. 质量度量
-6. 质量审核
-7. 质量记录
-8. 风险与问题管理""",
-            "开发计划": """1. 项目概述
-2. 软件开发过程
-3. 项目进度安排
-4. 资源配置
-5. 风险管理
-6. 质量保证措施
-7. 配置管理要求""",
-            "配置管理": """1. 配置管理组织
-2. 配置标识
-3. 配置控制
-4. 配置状态记录
-5. 配置审计
-6. 软件发布管理""",
-            "需求规格": """1. 引言
-2. 总体描述
-3. 具体需求（功能需求、性能需求、接口需求、可靠性需求、安全性需求）
-4. 需求可追踪性
-5. 附录""",
-            "技术方案": """1. 概述
-2. 软件需求概述
-3. 系统设计
-4. 软件体系结构设计
-5. 软件接口设计
-6. 数据库设计
-7. 安全性设计
-8. 可靠性设计""",
-            "审查报告": """1. 审查概述
-2. 审查依据
-3. 审查项目及结果
-4. 发现的问题及建议
-5. 审查结论
-6. 后续行动计划""",
-            "测试用例": """1. 测试概述
-2. 测试项列表
-3. 测试用例（正常流程、异常流程、边界值）
-4. 测试环境配置
-5. 测试状态说明""",
-            "验收报告": """1. 验收概述
-2. 验收依据
-3. 验收项目及结果
-4. 问题及处理
-5. 验收结论
-6. 交付物清单""",
-            "用户手册": """1. 软件概述
-2. 安装与配置
-3. 功能操作说明
-4. 常见问题处理
-5. 技术支持信息"""
-        }
-        
-        structure = base_structures.get(state["doc_type"], base_structures["质量保证"])
         fmt = state.get("format_settings", DEFAULT_FORMAT)
         
-        prompt = f"""你是一位军用软件开发文档专家。根据提取的文档内容，为产品 **{state['product_name']}** 生成一份**{state['style']}风格**的{config['title']}。
+        # ===== 获取模板结构 =====
+        doc_type = state["doc_type"]
+        template_info = GJB_TEMPLATE_MAP.get(doc_type, {})
+        template_path = template_info.get("template_path")
+        
+        # 优先从模板提取结构
+        if template_path and os.path.exists(template_path):
+            template_data = extract_doc_structure_from_template(template_path)
+            structure = template_data.get("structure", "")
+            print(f"✅ 从模板提取结构: {template_path}")
+        else:
+            # 使用默认结构
+            structure = get_default_structure_for_doc_type(doc_type)
+            print(f"⚠️ 使用默认结构: {doc_type}")
+        
+        # 获取自定义 prompt 或构建通用 prompt
+        custom_prompt = config.get("prompt", "")
+        product_name = state.get('product_name', '指定产品')
+        
+        if custom_prompt:
+            try:
+                prompt = custom_prompt.format(product_name=product_name)
+            except KeyError:
+                prompt = custom_prompt
+            prompt += f"\n\n### 文档结构要求（基于 GJB 438C）\n{structure}"
+            prompt += f"\n\n### 格式要求\n- 正文字体：{fmt.get('font_name', '宋体')}，字号：{fmt.get('font_size', 12)}pt\n- 标题字体：{fmt.get('heading1_font', '黑体')}\n- 行距：{fmt.get('line_spacing', 1.5)}倍\n- 对齐方式：{fmt.get('alignment', '左对齐')}"
+        else:
+            prompt = f"""你是一位军用软件开发文档专家。根据 GJB 438C 标准，为产品 **{product_name}** 生成一份**{state['style']}风格**的{config['title']}。
 
-**文档风格要求**：{style_info['prompt_suffix']}
+    ## 文档要求
+    - 严格遵循 GJB 438C-2021《军用软件开发文档通用要求》
+    - 文档结构必须包含以下章节
 
-**侧重要求**：{emphasis_info['prompt_suffix']}
+    ## 文档结构
+    {structure}
 
-**特殊要求**：{state['special_requirements']}
+    ## 内容要求
+    - 每个章节必须包含实质性内容
+    - 内容应与产品 **{product_name}** 的具体情况相关
+    - 专业术语需定义说明
+    - 关键信息应使用表格呈现
 
-**文档结构**：
-{structure}
+    **文档风格要求**：{style_info['prompt_suffix']}
 
-**格式要求**：
-- 正文字体：{fmt.get('font_name', '宋体')}，字号：{fmt.get('font_size', 12)}pt
-- 标题字体：{fmt.get('heading1_font', '黑体')}
-- 行距：{fmt.get('line_spacing', 1.5)}倍
-- 对齐方式：{fmt.get('alignment', '左对齐')}
+    **侧重要求**：{emphasis_info['prompt_suffix']}
 
-请确保文档内容专业、完整，符合GJB 438C标准要求。
-"""
+    **特殊要求**：{state['special_requirements']}
+
+    **格式要求**：
+    - 正文字体：{fmt.get('font_name', '宋体')}，字号：{fmt.get('font_size', 12)}pt
+    - 标题字体：{fmt.get('heading1_font', '黑体')}
+    - 行距：{fmt.get('line_spacing', 1.5)}倍
+    - 对齐方式：{fmt.get('alignment', '左对齐')}
+    """
+        
         return prompt
 
     def generate_document(self, state: DocumentState) -> Dict[str, Any]:
-        """生成文档"""
         config = self._get_doc_config(state["doc_type"])
         docs = state.get("retrieved_docs", [])
         
@@ -402,8 +690,6 @@ class GenerateDocumentWorkflow(BaseWorkflow):
             return {"doc_content": f"未能检索到相关文档，请确保知识库中包含{config['title']}相关内容。"}
         
         docs_text = "\n".join([doc.get('content', '') for doc in docs])
-        
-        # 构建自定义提示词
         system_prompt = self._build_custom_prompt(state)
         
         prompt = ChatPromptTemplate.from_messages([
@@ -411,13 +697,10 @@ class GenerateDocumentWorkflow(BaseWorkflow):
             ("human", "参考文档内容：\n{docs}\n\n请生成文档：")
         ])
         
-        response = self.llm.invoke(prompt.format_messages(
-            docs=docs_text
-        ))
+        response = self.llm.invoke(prompt.format_messages(docs=docs_text))
         return {"doc_content": response.content}
 
     def save_document(self, state: DocumentState) -> Dict[str, Any]:
-        """保存文档为 Word（应用用户指定的格式，支持表格）"""
         config = self._get_doc_config(state["doc_type"])
         fmt = state.get("format_settings", DEFAULT_FORMAT)
         
@@ -432,29 +715,25 @@ class GenerateDocumentWorkflow(BaseWorkflow):
         
         try:
             from docx import Document
-            from docx.shared import Pt, Cm, Inches, RGBColor
-            from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+            from docx.shared import Pt, Cm
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
             from docx.enum.section import WD_ORIENT
             from docx.oxml.ns import qn
-            from docx.oxml import OxmlElement
             
             content = state["doc_content"]
             doc = Document()
             
-            # ===== 设置页面边距 =====
             section = doc.sections[0]
             section.top_margin = Cm(fmt.get("margin_top", 2.54))
             section.bottom_margin = Cm(fmt.get("margin_bottom", 2.54))
             section.left_margin = Cm(fmt.get("margin_left", 3.17))
             section.right_margin = Cm(fmt.get("margin_right", 3.17))
             
-            # ===== 设置页面方向 =====
             if fmt.get("page_orientation") == "landscape":
                 section.orientation = WD_ORIENT.LANDSCAPE
                 section.page_width = Cm(29.7)
                 section.page_height = Cm(21.0)
             
-            # ===== 添加标题 =====
             title_para = doc.add_heading(f"{state['product_name']} {config['title']}", 0)
             title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
             run = title_para.runs[0] if title_para.runs else title_para.add_run()
@@ -462,7 +741,6 @@ class GenerateDocumentWorkflow(BaseWorkflow):
             run.font.size = Pt(fmt.get("heading1_size", 18))
             run._element.rPr.rFonts.set(qn('w:eastAsia'), fmt.get("heading1_font", "黑体"))
             
-            # ===== 添加文档信息 =====
             info_para = doc.add_paragraph()
             info_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
             info_run = info_para.add_run(f"文档风格：{state['style']} | 侧重点：{state['emphasis']}")
@@ -477,15 +755,12 @@ class GenerateDocumentWorkflow(BaseWorkflow):
             
             doc.add_paragraph()
             
-            # ===== 解析内容（支持表格） =====
             lines = content.split("\n")
             i = 0
             table_data = []
             in_table = False
-            table_headers = None
             
             def apply_cell_style(cell, text, font_name, font_size):
-                """应用单元格样式"""
                 cell.text = text
                 for para in cell.paragraphs:
                     for run in para.runs:
@@ -495,12 +770,10 @@ class GenerateDocumentWorkflow(BaseWorkflow):
                     para.alignment = WD_ALIGN_PARAGRAPH.LEFT
             
             def apply_paragraph_style(p, line, fmt):
-                """应用段落样式"""
                 for run in p.runs:
                     run.font.name = fmt.get("font_name", "宋体")
                     run.font.size = Pt(fmt.get("font_size", 12))
                     run._element.rPr.rFonts.set(qn('w:eastAsia'), fmt.get("font_name", "宋体"))
-                
                 align_map = {
                     "left": WD_ALIGN_PARAGRAPH.LEFT,
                     "center": WD_ALIGN_PARAGRAPH.CENTER,
@@ -513,20 +786,15 @@ class GenerateDocumentWorkflow(BaseWorkflow):
             while i < len(lines):
                 line = lines[i]
                 
-                # ===== 检测表格开始 =====
                 if line.startswith("|") and not in_table:
-                    # 进入表格模式
                     in_table = True
                     table_data = []
-                    # 收集表头
                     headers = [c.strip() for c in line.split("|") if c.strip()]
                     table_data.append(headers)
                     i += 1
                     continue
                 
-                # ===== 表格行 =====
                 if in_table and line.startswith("|"):
-                    # 跳过分隔行（包含 ---）
                     if "---" in line:
                         i += 1
                         continue
@@ -536,53 +804,33 @@ class GenerateDocumentWorkflow(BaseWorkflow):
                     i += 1
                     continue
                 
-                # ===== 表格结束 =====
                 if in_table and (not line.startswith("|") or i == len(lines) - 1):
                     in_table = False
-                    # 渲染表格
                     if table_data and len(table_data) > 0:
                         headers = table_data[0] if table_data else []
                         rows = table_data[1:] if len(table_data) > 1 else []
-                        
-                        # 创建表格
                         num_cols = len(headers) if headers else max([len(row) for row in rows]) if rows else 1
                         table = doc.add_table(rows=1 + len(rows), cols=num_cols)
                         table.style = fmt.get("table_style", "Light Grid Accent 1")
                         
-                        # 填充表头（第一行）
                         for j, header in enumerate(headers):
                             if j < len(table.rows[0].cells):
-                                apply_cell_style(
-                                    table.rows[0].cells[j], 
-                                    header, 
-                                    fmt.get("heading2_font", "黑体"), 
-                                    fmt.get("font_size", 12)
-                                )
-                                # 表头加粗
+                                apply_cell_style(table.rows[0].cells[j], header, fmt.get("heading2_font", "黑体"), fmt.get("font_size", 12))
                                 for para in table.rows[0].cells[j].paragraphs:
                                     for run in para.runs:
                                         run.bold = True
                         
-                        # 填充数据行
                         for row_idx, row_data in enumerate(rows):
                             if row_idx + 1 < len(table.rows):
                                 for col_idx, cell_text in enumerate(row_data):
                                     if col_idx < len(table.rows[row_idx + 1].cells):
-                                        apply_cell_style(
-                                            table.rows[row_idx + 1].cells[col_idx],
-                                            cell_text,
-                                            fmt.get("font_name", "宋体"),
-                                            fmt.get("font_size", 11)
-                                        )
+                                        apply_cell_style(table.rows[row_idx + 1].cells[col_idx], cell_text, fmt.get("font_name", "宋体"), fmt.get("font_size", 11))
                         
-                        # 设置表格宽度
                         for col in range(num_cols):
                             table.rows[0].cells[col].width = Cm(12.0 / num_cols)
-                        
-                        doc.add_paragraph()  # 表格后添加空行
+                        doc.add_paragraph()
                     continue
                 
-                # ===== 标题处理 =====
                 if line.startswith("# "):
                     p = doc.add_heading(line[2:], 1)
                     for run in p.runs:
@@ -610,24 +858,20 @@ class GenerateDocumentWorkflow(BaseWorkflow):
                     i += 1
                     continue
                 
-                # ===== 列表项 =====
                 if line.startswith("- "):
                     p = doc.add_paragraph(line[2:], style='List Bullet')
                     apply_paragraph_style(p, line, fmt)
                     i += 1
                     continue
                 
-                # ===== 普通段落 =====
                 if line.strip():
                     p = doc.add_paragraph(line.strip())
                     apply_paragraph_style(p, line, fmt)
                 else:
-                    # 空行
                     doc.add_paragraph()
                 
                 i += 1
             
-            # ===== 保存文档 =====
             doc.save(file_path)
             return {"doc_path": file_path, "format_applied": fmt}
             
@@ -643,7 +887,6 @@ class GenerateDocumentWorkflow(BaseWorkflow):
             return {"doc_path": md_path, "warning": f"Word 生成失败，已保存为 Markdown: {str(e)}"}
 
     async def run(self, request: str, thread_id: str = "default") -> Dict[str, Any]:
-        """运行工作流"""
         config = {"configurable": {"thread_id": thread_id}}
         initial_state = {"user_request": request}
         final_state = await self.app.ainvoke(initial_state, config)

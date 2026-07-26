@@ -1,292 +1,429 @@
+/**
+ * KnowFoundry RAG Console - 场景管理
+ * 负责加载、切换和渲染业务场景
+ */
+
+// ============================================
+// 场景加载
+// ============================================
+
 async function loadScenarios() {
-  const payload = await fetchJson('/api/scenarios');
-  state.scenarios = payload.scenarios || [];
-  els.scenarioSelect.innerHTML = '';
-  for (const scenario of state.scenarios) {
-    const option = document.createElement('option');
-    option.value = scenario.scenario_id;
-    option.textContent = `${scenario.display_name} (${scenario.industry})`;
-    els.scenarioSelect.appendChild(option);
-  }
-  renderScenarioList(state.scenarios);
-  const saved = localStorage.getItem('activeScenarioId');
-  const active = state.scenarios.find(item => item.scenario_id === saved)
-    || state.scenarios.find(item => item.scenario_id === payload.active_scenario_id)
-    || state.scenarios[0];
-  if (active) {
-    await applyScenario(active.scenario_id, false);
-  }
+    try {
+        console.log('正在加载场景...');
+        const payload = await fetchJson('/api/scenarios');
+        
+        console.log('场景数据加载成功:', payload);
+        
+        state.scenarios = payload.scenarios || [];
+        
+        // 构建场景下拉框
+        els.scenarioSelect.innerHTML = '';
+        for (const scenario of state.scenarios) {
+            const option = document.createElement('option');
+            option.value = scenario.scenario_id;
+            option.textContent = `${scenario.display_name}`;
+            els.scenarioSelect.appendChild(option);
+        }
+        
+        // 渲染场景列表
+        renderScenarioList(state.scenarios);
+        
+        // 确定激活的场景
+        const saved = localStorage.getItem('activeScenarioId');
+        const active = state.scenarios.find(item => item.scenario_id === saved)
+            || state.scenarios.find(item => item.scenario_id === payload.active_scenario_id)
+            || state.scenarios[0];
+        
+        if (active) {
+            await applyScenario(active.scenario_id, false);
+        }
+        
+        console.log('✅ 场景加载完成，共', state.scenarios.length, '个场景');
+        return state.scenarios;
+    } catch (e) {
+        console.error('加载场景失败:', e);
+        return [];
+    }
 }
+
+// ============================================
+// 应用场景
+// ============================================
 
 async function applyScenario(scenarioId, resetSession) {
-  state.scenarioId = scenarioId;
-  localStorage.setItem('activeScenarioId', scenarioId);
-  els.scenarioSelect.value = scenarioId;
-  updateScenarioActive();
-  const scenario = currentScenario();
-  state.lastDiagnostics = null;
-  state.lastStreamStatus = '等待提问';
-  state.lastHitType = '-';
-  state.lastSourceCount = 0;
-  state.lastTraceId = null;
-  // The sidebar describes the platform capability, while the selected scene remains visible in the main header.
-  els.scenarioDescription.textContent = '支持多场景、多专有知识库下的知识助手';
-  els.contextTitle.textContent = scenario ? scenario.display_name : '知识问答';
-  els.contextSubtitle.textContent = scenario ? scenario.business_domain : '等待场景配置';
-  await Promise.all([loadSources(), loadKbVersion()]);
-  renderSamples();
-  updateScopeDisplay();
-  updateSideStats();
-  renderSessionCards();
-  if (resetSession) {
-    const restored = await restoreLatestSessionForScenario();
-    if (!restored) {
-      await createNewSession();
+    if (!scenarioId) return;
+    
+    state.scenarioId = scenarioId;
+    localStorage.setItem('activeScenarioId', scenarioId);
+    els.scenarioSelect.value = scenarioId;
+    
+    // 更新 UI
+    updateScenarioActive();
+    
+    const scenario = currentScenario();
+    
+    // 重置状态
+    state.lastDiagnostics = null;
+    state.lastStreamStatus = '等待提问';
+    state.lastHitType = '-';
+    state.lastSourceCount = 0;
+    state.lastTraceId = null;
+    
+    // 更新界面标题
+    els.scenarioDescription.textContent = '支持多场景、多专有知识库下的知识助手';
+    els.contextTitle.textContent = scenario ? scenario.display_name : '知识问答';
+    els.contextSubtitle.textContent = scenario ? (scenario.business_domain || scenario.description) : '等待场景配置';
+    
+    // 加载场景数据
+    await Promise.all([loadSources(), loadKbVersion()]);
+    
+    // 更新 UI
+    renderSamples();
+    updateScopeDisplay();
+    updateSideStats();
+    renderSessionCards();
+    
+    if (resetSession) {
+        const restored = await restoreLatestSessionForScenario();
+        if (!restored) {
+            await createNewSession();
+        }
     }
-  }
+    
+    console.log('✅ 已切换到场景:', scenarioId, scenario ? scenario.display_name : '');
 }
+
+// ============================================
+// 渲染场景列表
+// ============================================
 
 function renderScenarioList(scenarios) {
-  if (!els.scenarioList) return;
-  const displayScenarios = scenarioCatalogItems(scenarios);
-  if (!displayScenarios.length) {
-    els.scenarioList.innerHTML = '<div class="empty-state compact">暂无业务场景</div>';
-    return;
-  }
-  els.scenarioList.innerHTML = displayScenarios.map(scenario => `
-    <button class="scenario-item" type="button" data-scenario="${escapeAttribute(scenario.scenario_id)}">
-      <i data-lucide="${escapeAttribute(scenarioIcon(scenario))}"></i>
-      <span>${escapeHtml(scenario.display_name)}</span>
-    </button>
-  `).join('');
-  els.scenarioList.querySelectorAll('.scenario-item').forEach(button => {
-    button.addEventListener('click', async () => {
-      if (state.inProgress) cancelStream();
-      await applyScenario(button.dataset.scenario, true);
+    if (!els.scenarioList) return;
+    
+    const displayScenarios = scenarioCatalogItems(scenarios);
+    
+    if (!displayScenarios.length) {
+        els.scenarioList.innerHTML = '<div class="empty-state compact">暂无业务场景</div>';
+        return;
+    }
+    
+    els.scenarioList.innerHTML = displayScenarios.map(scenario => `
+        <button class="scenario-item" type="button" data-scenario="${escapeAttribute(scenario.scenario_id)}">
+            <i data-lucide="${escapeAttribute(scenarioIcon(scenario))}"></i>
+            <span>${escapeHtml(scenario.display_name)}</span>
+        </button>
+    `).join('');
+    
+    els.scenarioList.querySelectorAll('.scenario-item').forEach(button => {
+        button.addEventListener('click', async () => {
+            if (state.inProgress) {
+                if (typeof window.cancelStream === 'function') {
+                    window.cancelStream();
+                }
+            }
+            await applyScenario(button.dataset.scenario, true);
+        });
     });
-  });
-  updateScenarioActive();
-  refreshIcons();
+    
+    updateScenarioActive();
+    refreshIcons();
 }
+
+// ============================================
+// 场景目录项
+// ============================================
 
 function scenarioCatalogItems(apiScenarios) {
-  const catalog = Array.isArray(window.KNOWFORGE_SCENARIO_CATALOG)
-    ? window.KNOWFORGE_SCENARIO_CATALOG
-    : [];
-  const catalogById = new Map(catalog.map(item => [item.scenario_id, item]));
-  return apiScenarios
-    .map((scenario, index) => {
-      const config = catalogById.get(scenario.scenario_id) || {};
-      return {
-        ...scenario,
-        ...config,
-        display_name: config.display_name || scenario.display_name,
-        industry: config.industry || scenario.industry,
-        _order: Number.isFinite(Number(config.order)) ? Number(config.order) : 1000 + index
-      };
-    })
-    .filter(scenario => scenario.hidden !== true)
-    .sort((a, b) => a._order - b._order);
+    const catalog = Array.isArray(window.KNOWFORGE_SCENARIO_CATALOG)
+        ? window.KNOWFORGE_SCENARIO_CATALOG
+        : [];
+    const catalogById = new Map(catalog.map(item => [item.scenario_id, item]));
+    
+    return apiScenarios
+        .map((scenario, index) => {
+            const config = catalogById.get(scenario.scenario_id) || {};
+            return {
+                ...scenario,
+                ...config,
+                display_name: config.display_name || scenario.display_name,
+                industry: config.industry || scenario.industry,
+                _order: Number.isFinite(Number(config.order)) ? Number(config.order) : 1000 + index
+            };
+        })
+        .filter(scenario => scenario.hidden !== true)
+        .sort((a, b) => a._order - b._order);
 }
+
+// ============================================
+// 更新场景激活状态
+// ============================================
 
 function updateScenarioActive() {
-  if (!els.scenarioList) return;
-  const activeValue = state.scenarioId || els.scenarioSelect.value || '';
-  els.scenarioList.querySelectorAll('.scenario-item').forEach(button => {
-    button.classList.toggle('active', button.dataset.scenario === activeValue);
-  });
+    if (!els.scenarioList) return;
+    const activeValue = state.scenarioId || els.scenarioSelect.value || '';
+    els.scenarioList.querySelectorAll('.scenario-item').forEach(button => {
+        button.classList.toggle('active', button.dataset.scenario === activeValue);
+    });
 }
+
+// ============================================
+// 场景图标
+// ============================================
 
 function scenarioIcon(scenario) {
-  if (scenario.icon) return scenario.icon;
-  const text = `${scenario.display_name || ''} ${scenario.industry || ''} ${scenario.business_domain || ''}`;
-  if (text.includes('合规') || text.includes('法务')) return 'scale';
-  if (text.includes('贸易') || text.includes('跨境')) return 'ship';
-  if (text.includes('工程') || text.includes('施工')) return 'hard-hat';
-  if (text.includes('企业') || text.includes('内部')) return 'building-2';
-  if (text.includes('设备') || text.includes('运维')) return 'settings-2';
-  if (text.includes('保险') || text.includes('理赔')) return 'badge-dollar-sign';
-  if (text.includes('客服') || text.includes('SaaS')) return 'headphones';
-  if (text.includes('招投标') || text.includes('合同')) return 'file-signature';
-  return 'layers-3';
+    if (scenario.icon) return scenario.icon;
+    const text = `${scenario.display_name || ''} ${scenario.industry || ''} ${scenario.business_domain || ''}`;
+    if (text.includes('合规') || text.includes('法务')) return 'scale';
+    if (text.includes('贸易') || text.includes('跨境')) return 'ship';
+    if (text.includes('工程') || text.includes('施工')) return 'hard-hat';
+    if (text.includes('企业') || text.includes('内部')) return 'building-2';
+    if (text.includes('设备') || text.includes('运维')) return 'settings-2';
+    if (text.includes('保险') || text.includes('理赔')) return 'badge-dollar-sign';
+    if (text.includes('客服') || text.includes('SaaS')) return 'headphones';
+    if (text.includes('招投标') || text.includes('合同')) return 'file-signature';
+    if (text.includes('军用') || text.includes('国防') || text.includes('GJB')) return 'shield';
+    return 'layers-3';
 }
+
+// ============================================
+// 获取当前场景
+// ============================================
+
+function currentScenario() {
+    return state.scenarios.find(item => item.scenario_id === state.scenarioId);
+}
+
+// ============================================
+// 加载来源分类
+// ============================================
 
 async function loadSources() {
-  const query = state.scenarioId ? `?scenario_id=${encodeURIComponent(state.scenarioId)}` : '';
-  const payload = await fetchJson(`/api/sources${query}`);
-  const options = payload.source_options || (payload.sources || []).map(item => ({ value: item, label: item }));
-  els.sourceFilter.innerHTML = '<option value="">全部</option>';
-  for (const source of options) {
-    const option = document.createElement('option');
-    option.value = source.value;
-    option.textContent = source.label;
-    els.sourceFilter.appendChild(option);
-  }
-  renderCategoryList(options);
+    const query = state.scenarioId ? `?scenario_id=${encodeURIComponent(state.scenarioId)}` : '';
+    const payload = await fetchJson(`/api/sources${query}`);
+    const options = payload.source_options || (payload.sources || []).map(item => ({ value: item, label: item }));
+    
+    els.sourceFilter.innerHTML = '<option value="">全部分类</option>';
+    for (const source of options) {
+        const option = document.createElement('option');
+        option.value = source.value;
+        option.textContent = source.label;
+        els.sourceFilter.appendChild(option);
+    }
+    renderCategoryList(options);
 }
 
+// ============================================
+// 渲染分类列表
+// ============================================
+
 function renderCategoryList(options) {
-  if (!els.categoryList) return;
-  const normalized = [{ value: '', label: '全部分类' }, ...options];
-  els.categoryList.innerHTML = normalized.map((source, index) => `
-    <button class="taxonomy-item${index === 0 ? ' active' : ''}" type="button" data-source="${escapeAttribute(source.value)}">
-      <i data-lucide="${escapeAttribute(categoryIcon(source.label, index))}"></i>
-      <span>${escapeHtml(source.label)}</span>
-    </button>
-  `).join('');
-  els.categoryList.querySelectorAll('.taxonomy-item').forEach(button => {
-    button.addEventListener('click', () => {
-      els.sourceFilter.value = button.dataset.source || '';
-      updateCategoryActive();
-      updateScopeDisplay();
+    if (!els.categoryList) return;
+    const normalized = [{ value: '', label: '全部分类' }, ...options];
+    els.categoryList.innerHTML = normalized.map((source, index) => `
+        <button class="taxonomy-item${index === 0 ? ' active' : ''}" type="button" data-source="${escapeAttribute(source.value)}">
+            <i data-lucide="${escapeAttribute(categoryIcon(source.label, index))}"></i>
+            <span>${escapeHtml(source.label)}</span>
+        </button>
+    `).join('');
+    els.categoryList.querySelectorAll('.taxonomy-item').forEach(button => {
+        button.addEventListener('click', () => {
+            els.sourceFilter.value = button.dataset.source || '';
+            updateCategoryActive();
+            updateScopeDisplay();
+        });
     });
-  });
-  refreshIcons();
+    refreshIcons();
 }
 
 function updateCategoryActive() {
-  if (!els.categoryList) return;
-  const activeValue = els.sourceFilter.value || '';
-  els.categoryList.querySelectorAll('.taxonomy-item').forEach(button => {
-    button.classList.toggle('active', (button.dataset.source || '') === activeValue);
-  });
+    if (!els.categoryList) return;
+    const activeValue = els.sourceFilter.value || '';
+    els.categoryList.querySelectorAll('.taxonomy-item').forEach(button => {
+        button.classList.toggle('active', (button.dataset.source || '') === activeValue);
+    });
 }
 
 function categoryIcon(label, index) {
-  const text = String(label || '');
-  if (text.includes('安全') || text.includes('风控') || text.includes('合规')) return 'shield-check';
-  if (text.includes('质量') || text.includes('验收') || text.includes('审核')) return 'badge-check';
-  if (text.includes('图纸') || text.includes('变更') || text.includes('合同')) return 'file-diff';
-  if (text.includes('进度') || text.includes('计划') || text.includes('流程')) return 'calendar-days';
-  if (text.includes('设备') || text.includes('巡检') || text.includes('运维')) return 'settings-2';
-  if (text.includes('客服') || text.includes('问答')) return 'messages-square';
-  return ['folder-tree', 'clipboard-list', 'database', 'file-text'][index % 4];
+    const text = String(label || '');
+    if (text.includes('安全') || text.includes('风控') || text.includes('合规')) return 'shield-check';
+    if (text.includes('质量') || text.includes('验收') || text.includes('审核')) return 'badge-check';
+    if (text.includes('图纸') || text.includes('变更') || text.includes('合同')) return 'file-diff';
+    if (text.includes('进度') || text.includes('计划') || text.includes('流程')) return 'calendar-days';
+    if (text.includes('设备') || text.includes('巡检') || text.includes('运维')) return 'settings-2';
+    if (text.includes('客服') || text.includes('问答')) return 'messages-square';
+    return ['folder-tree', 'clipboard-list', 'database', 'file-text'][index % 4];
 }
 
+// ============================================
+// 加载知识库版本
+// ============================================
+
 async function loadKbVersion() {
-  if (!state.scenarioId) return;
-  let payload = null;
-  try {
-    payload = await fetchJson(`/api/kb_versions?scenario_id=${encodeURIComponent(state.scenarioId)}`);
-    state.kbVersion = payload.effective_active_version || payload.active_version || null;
-  } catch {
-    state.kbVersion = null;
-  }
-  renderKbPill(payload);
-  renderKbSummary(payload);
-  refreshIcons();
+    if (!state.scenarioId) return;
+    let payload = null;
+    try {
+        payload = await fetchJson(`/api/kb_versions?scenario_id=${encodeURIComponent(state.scenarioId)}`);
+        state.kbVersion = payload.effective_active_version || payload.active_version || null;
+    } catch {
+        state.kbVersion = null;
+    }
+    renderKbPill(payload);
+    renderKbSummary(payload);
+    refreshIcons();
 }
 
 function renderKbPill(payload) {
-  const activeVersion = payload?.active_version || '-';
-  const effectiveVersion = payload?.effective_active_version || state.kbVersion || '未激活';
-  const displayVersion = state.kbVersion || effectiveVersion;
-  const scenarioId = payload?.scenario_id || state.scenarioId || '-';
-  els.kbPill.dataset.kbVersion = effectiveVersion;
-  els.kbPill.setAttribute('role', 'button');
-  els.kbPill.setAttribute('tabindex', '0');
-  els.kbPill.setAttribute('aria-label', `复制知识库版本 ${effectiveVersion}`);
-  els.kbPill.innerHTML = `
-    <i data-lucide="database"></i>
-    <span class="kb-pill-label">${escapeHtml(shortText(displayVersion, 24))}</span>
-    <span class="kb-tooltip" role="tooltip">
-      <span class="kb-tooltip-title">完整知识库版本</span>
-      <code>${escapeHtml(effectiveVersion)}</code>
-      <span class="kb-tooltip-row"><em>scenario_id</em><strong>${escapeHtml(scenarioId)}</strong></span>
-      <span class="kb-tooltip-row"><em>active_version</em><strong>${escapeHtml(activeVersion)}</strong></span>
-      <span class="kb-tooltip-row"><em>effective_active_version</em><strong>${escapeHtml(effectiveVersion)}</strong></span>
-    </span>
-  `;
-  els.kbPill.onclick = copyCurrentKbVersion;
-  els.kbPill.onkeydown = event => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      copyCurrentKbVersion();
-    }
-  };
+    const activeVersion = payload?.active_version || '-';
+    const effectiveVersion = payload?.effective_active_version || state.kbVersion || '未激活';
+    const displayVersion = state.kbVersion || effectiveVersion;
+    const scenarioId = payload?.scenario_id || state.scenarioId || '-';
+    
+    els.kbPill.dataset.kbVersion = effectiveVersion;
+    els.kbPill.setAttribute('role', 'button');
+    els.kbPill.setAttribute('tabindex', '0');
+    els.kbPill.setAttribute('aria-label', `复制知识库版本 ${effectiveVersion}`);
+    els.kbPill.innerHTML = `
+        <i data-lucide="database"></i>
+        <span class="kb-pill-label">${escapeHtml(shortText(displayVersion, 24))}</span>
+        <span class="kb-tooltip" role="tooltip">
+            <span class="kb-tooltip-title">完整知识库版本</span>
+            <code>${escapeHtml(effectiveVersion)}</code>
+            <span class="kb-tooltip-row"><em>scenario_id</em><strong>${escapeHtml(scenarioId)}</strong></span>
+            <span class="kb-tooltip-row"><em>active_version</em><strong>${escapeHtml(activeVersion)}</strong></span>
+            <span class="kb-tooltip-row"><em>effective_active_version</em><strong>${escapeHtml(effectiveVersion)}</strong></span>
+        </span>
+    `;
+    els.kbPill.onclick = copyCurrentKbVersion;
+    els.kbPill.onkeydown = event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            copyCurrentKbVersion();
+        }
+    };
 }
 
 async function copyCurrentKbVersion() {
-  const version = els.kbPill?.dataset?.kbVersion;
-  if (!version || version === '未激活') return;
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(version);
-    } else {
-      fallbackCopyText(version);
+    const version = els.kbPill?.dataset?.kbVersion;
+    if (!version || version === '未激活') return;
+    try {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(version);
+        } else {
+            fallbackCopyText(version);
+        }
+        markKbVersionCopied();
+    } catch {
+        fallbackCopyText(version);
+        markKbVersionCopied();
     }
-    markKbVersionCopied();
-  } catch {
-    fallbackCopyText(version);
-    markKbVersionCopied();
-  }
 }
 
 function fallbackCopyText(text) {
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.setAttribute('readonly', '');
-  textarea.style.position = 'fixed';
-  textarea.style.left = '-9999px';
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand('copy');
-  textarea.remove();
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
 }
 
 function markKbVersionCopied() {
-  const title = els.kbPill.querySelector('.kb-tooltip-title');
-  if (!title) return;
-  const originalText = title.textContent;
-  els.kbPill.classList.add('is-copied');
-  title.textContent = '已复制知识库版本';
-  window.clearTimeout(els.kbPill._copyTimer);
-  els.kbPill._copyTimer = window.setTimeout(() => {
-    title.textContent = originalText;
-    els.kbPill.classList.remove('is-copied');
-  }, 1400);
+    const title = els.kbPill.querySelector('.kb-tooltip-title');
+    if (!title) return;
+    const originalText = title.textContent;
+    els.kbPill.classList.add('is-copied');
+    title.textContent = '已复制知识库版本';
+    window.clearTimeout(els.kbPill._copyTimer);
+    els.kbPill._copyTimer = window.setTimeout(() => {
+        title.textContent = originalText;
+        els.kbPill.classList.remove('is-copied');
+    }, 1400);
 }
 
 function renderKbSummary(payload) {
-  if (!els.kbSummary) return;
-  const versions = Array.isArray(payload?.versions) ? payload.versions : [];
-  const effectiveVersion = payload?.effective_active_version || payload?.active_version || state.kbVersion || '-';
-  const activeRecord = versions.find(item => item.kb_version === effectiveVersion)
-    || versions.find(item => item.status === 'ACTIVE')
-    || null;
-  const stats = activeRecord?.stats || {};
-  const docTotal = Number(stats.total_doc_written);
-  const faqTotal = Number(stats.total_faq_written);
-  const totalDocuments = [docTotal, faqTotal]
-    .filter(Number.isFinite)
-    .reduce((sum, value) => sum + value, 0);
-  const documentText = Number.isFinite(totalDocuments) && totalDocuments > 0
-    ? totalDocuments.toLocaleString()
-    : '-';
-  const statusText = activeRecord?.status || (effectiveVersion && effectiveVersion !== '-' ? 'ACTIVE' : '等待数据');
-  const ingestedAt = formatKbSummaryDate(stats.last_ingested_at || activeRecord?.activated_at || activeRecord?.created_at);
+    if (!els.kbSummary) return;
+    const versions = Array.isArray(payload?.versions) ? payload.versions : [];
+    const effectiveVersion = payload?.effective_active_version || payload?.active_version || state.kbVersion || '-';
+    const activeRecord = versions.find(item => item.kb_version === effectiveVersion)
+        || versions.find(item => item.status === 'ACTIVE')
+        || null;
+    const stats = activeRecord?.stats || {};
+    const docTotal = Number(stats.total_doc_written);
+    const faqTotal = Number(stats.total_faq_written);
+    const totalDocuments = [docTotal, faqTotal]
+        .filter(Number.isFinite)
+        .reduce((sum, value) => sum + value, 0);
+    const documentText = Number.isFinite(totalDocuments) && totalDocuments > 0
+        ? totalDocuments.toLocaleString()
+        : '-';
+    const statusText = activeRecord?.status || (effectiveVersion && effectiveVersion !== '-' ? 'ACTIVE' : '等待数据');
+    const ingestedAt = formatKbSummaryDate(stats.last_ingested_at || activeRecord?.activated_at || activeRecord?.created_at);
 
-  els.kbSummary.innerHTML = `
-    <div><span>当前知识库</span><strong title="${escapeAttribute(effectiveVersion)}">${escapeHtml(shortText(effectiveVersion, 24))}</strong></div>
-    <div><span>状态</span><strong class="${statusText === 'ACTIVE' ? 'ok-text' : ''}">${escapeHtml(statusText)}</strong></div>
-    <div><span>文档总数</span><strong title="FAQ ${escapeAttribute(stats.total_faq_written ?? '-')} / DOC ${escapeAttribute(stats.total_doc_written ?? '-')}">${escapeHtml(documentText)}</strong></div>
-    <div><span>入库时间</span><strong title="${escapeAttribute(stats.last_ingested_at || '-')}">${escapeHtml(ingestedAt)}</strong></div>
-  `;
+    els.kbSummary.innerHTML = `
+        <div><span>当前知识库</span><strong title="${escapeAttribute(effectiveVersion)}">${escapeHtml(shortText(effectiveVersion, 24))}</strong></div>
+        <div><span>状态</span><strong class="${statusText === 'ACTIVE' ? 'ok-text' : ''}">${escapeHtml(statusText)}</strong></div>
+        <div><span>文档总数</span><strong title="FAQ ${escapeAttribute(stats.total_faq_written ?? '-')} / DOC ${escapeAttribute(stats.total_doc_written ?? '-')}">${escapeHtml(documentText)}</strong></div>
+        <div><span>入库时间</span><strong title="${escapeAttribute(stats.last_ingested_at || '-')}">${escapeHtml(ingestedAt)}</strong></div>
+    `;
 }
 
 function formatKbSummaryDate(value) {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  });
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    });
 }
 
-function currentScenario() {
-  return state.scenarios.find(item => item.scenario_id === state.scenarioId);
+// ============================================
+// 工具函数
+// ============================================
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
+
+function escapeAttribute(text) {
+    if (!text) return '';
+    return String(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function shortText(text, maxLength) {
+    if (!text) return '';
+    const str = String(text);
+    return str.length > maxLength ? str.slice(0, maxLength) + '...' : str;
+}
+
+function refreshIcons() {
+    if (window.lucide) {
+        window.lucide.createIcons();
+    }
+}
+
+// ============================================
+// 暴露全局函数
+// ============================================
+
+window.loadScenarios = loadScenarios;
+window.applyScenario = applyScenario;
+window.currentScenario = currentScenario;
+window.selectScenario = async function(scenarioId) {
+    await applyScenario(scenarioId, true);
+};
+
+// ============================================
+// 页面加载时自动初始化
+// ============================================
+
+console.log('scenario.js 加载完成');

@@ -1,3 +1,7 @@
+/**
+ * KnowFoundry RAG Console - API 调用和 WebSocket 管理
+ */
+
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, { cache: 'no-store', ...options });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
@@ -11,10 +15,9 @@ function streamAnswer(query, contentElement) {
 
   return new Promise((resolve, reject) => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // 获取 token（从全局变量或使用默认值）
     const token = window.ADMIN_API_TOKEN || 'admin-token-123';
     state.socket = new WebSocket(`${protocol}//${window.location.host}${API_BASE_URL}/api/stream?token=${token}`);
-    //state.socket = new WebSocket(`${protocol}//${window.location.host}${API_BASE_URL}/api/stream`);
+    
     let answer = '';
     let sources = [];
     let completed = false;
@@ -123,3 +126,195 @@ function streamAnswer(query, contentElement) {
     };
   });
 }
+
+// ============================================
+// WebSocket 自动连接（修复版）
+// ============================================
+
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(function() {
+        if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
+            console.log('自动连接 WebSocket...');
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const token = window.ADMIN_API_TOKEN || 'admin-token-123';
+            state.socket = new WebSocket(`${protocol}//${window.location.host}/api/stream?token=${token}`);
+
+            state.socket.onopen = function() {
+                console.log('✅ WebSocket 自动连接成功');
+                const el = document.getElementById('websocketHealth');
+                if (el) { el.textContent = '正常'; el.className = 'status-ok'; }
+                
+                // ===== 修复：添加 onmessage 消息处理 =====
+                state.socket.onmessage = function(event) {
+                    console.log('📩 收到消息:', event.data);
+                    try {
+                        const data = JSON.parse(event.data);
+                        console.log('解析后的数据:', data);
+                        
+                        if (data.type === 'start') {
+                            console.log('✅ 开始生成');
+                            // 在聊天区域创建占位
+                            const chatHistory = document.getElementById('chatHistory');
+                            if (chatHistory) {
+                                // 检查最后一个消息是否是用户消息，如果不是则创建新的
+                                const lastChild = chatHistory.lastElementChild;
+                                if (!lastChild || !lastChild.classList.contains('assistant-message')) {
+                                    const div = document.createElement('div');
+                                    div.className = 'message assistant-message';
+                                    div.innerHTML = '<div class="message-content">⏳ 正在生成...</div>';
+                                    chatHistory.appendChild(div);
+                                    chatHistory.scrollTop = chatHistory.scrollHeight;
+                                }
+                            }
+                        } else if (data.type === 'token') {
+                            console.log('收到 token:', data.token);
+                            const chatHistory = document.getElementById('chatHistory');
+                            if (chatHistory) {
+                                // 查找最后一个 assistant 消息
+                                const messages = chatHistory.querySelectorAll('.assistant-message');
+                                let lastMsg = messages[messages.length - 1];
+                                if (!lastMsg) {
+                                    // 如果没有 assistant 消息，创建一个
+                                    const div = document.createElement('div');
+                                    div.className = 'message assistant-message';
+                                    div.innerHTML = '<div class="message-content"></div>';
+                                    chatHistory.appendChild(div);
+                                    lastMsg = div;
+                                }
+                                const content = lastMsg.querySelector('.message-content');
+                                if (content) {
+                                    if (content.textContent === '⏳ 正在生成...') {
+                                        content.textContent = data.token || '';
+                                    } else {
+                                        content.textContent += data.token || '';
+                                    }
+                                }
+                                chatHistory.scrollTop = chatHistory.scrollHeight;
+                            }
+                        } else if (data.type === 'end') {
+                            console.log('✅ 回答完成');
+                            state.lastStreamStatus = '回答完成';
+                            state.inProgress = false;
+                            if (typeof updateSideStats === 'function') updateSideStats();
+                            if (typeof setConnectionState === 'function') setConnectionState('ready', '就绪');
+                            // 更新 WebSocket 健康状态
+                            const el = document.getElementById('websocketHealth');
+                            if (el) { el.textContent = '正常'; el.className = 'status-ok'; }
+                        } else if (data.type === 'error') {
+                            console.error('❌ 错误:', data.error);
+                            state.lastStreamStatus = '处理异常';
+                            state.inProgress = false;
+                            const el = document.getElementById('websocketHealth');
+                            if (el) { el.textContent = '异常'; el.className = 'status-error'; }
+                        }
+                    } catch (e) {
+                        console.error('解析消息失败:', e);
+                    }
+                };
+            };
+            
+            state.socket.onerror = function() {
+                console.error('❌ WebSocket 自动连接失败');
+                const el = document.getElementById('websocketHealth');
+                if (el) { el.textContent = '异常'; el.className = 'status-error'; }
+            };
+            
+            state.socket.onclose = function() {
+                console.log('WebSocket 连接关闭');
+                const el = document.getElementById('websocketHealth');
+                if (el) { el.textContent = '待检测'; el.className = 'status-pending'; }
+            };
+        }
+    }, 500);
+});
+
+// ============================================
+// WebSocket 健康状态函数
+// ============================================
+
+function setWebSocketHealth(type, text) {
+    const el = document.getElementById('websocketHealth');
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'status-' + type;
+}
+
+function setConnectionState(type, text) {
+    const pill = document.getElementById('connectionPill');
+    if (!pill) return;
+    pill.className = `pill ${type}`;
+    const span = pill.querySelector('span:last-child');
+    if (span) span.textContent = text;
+}
+
+function updateSideStats() {
+    const statsEl = document.getElementById('sideStats');
+    if (statsEl) {
+        statsEl.innerHTML = `
+            <div><span>状态</span><strong>${state.lastStreamStatus || '等待中'}</strong></div>
+            <div><span>命中</span><strong>${state.lastHitType || '-'}</strong></div>
+            <div><span>来源数</span><strong>${state.lastSourceCount || 0}</strong></div>
+            ${state.lastTraceId ? `<div><span>Trace ID</span><strong style="font-size:11px;">${state.lastTraceId}</strong></div>` : ''}
+        `;
+    }
+}
+
+function scrollToBottom() {
+    const container = document.getElementById('chatHistory');
+    if (container) {
+        container.scrollTop = container.scrollHeight;
+    }
+}
+
+function renderMarkdown(text) {
+    if (typeof marked !== 'undefined') {
+        return marked.parse(text || '');
+    }
+    return text || '';
+}
+
+function renderSources(sources) {
+    if (!sources || sources.length === 0) return '';
+    const html = sources.map(s => 
+        `<div class="source-item">${s.citation || s.content || '来源'}</div>`
+    ).join('');
+    return `<div class="sources-container"><h4>📚 引用来源</h4>${html}</div>`;
+}
+
+function renderClassificationResult(classification) {
+    const el = document.getElementById('classificationResult');
+    if (!el) return;
+    if (!classification) {
+        el.innerHTML = '<div><span>可能分类</span><strong class="classification-badge is-waiting">等待分类</strong></div><ol></ol><p>分类结果会随最近一次回答更新</p>';
+        return;
+    }
+    const candidates = classification.candidates || [];
+    const top = candidates[0] || {};
+    el.innerHTML = `
+        <div><span>可能分类</span><strong class="classification-badge">${top.label || '未知'}</strong></div>
+        <ol>${candidates.map(c => `<li>${c.label || c.source}: ${(c.score * 100).toFixed(0)}%</li>`).join('')}</ol>
+        <p>分类结果随最近一次回答更新</p>
+    `;
+}
+
+function renderAnswerDiagnostics(diagnostics) {
+    if (!diagnostics) return '';
+    return `<div class="diagnostics-container" style="font-size:12px;color:#999;margin-top:8px;padding:8px;background:#f5f5f5;border-radius:4px;">
+        <details><summary>🔍 诊断信息</summary>
+        <pre style="font-size:11px;white-space:pre-wrap;word-break:break-all;">${JSON.stringify(diagnostics, null, 2)}</pre>
+        </details>
+    </div>`;
+}
+
+function buildDiagnosticsSnapshot(data, sources) {
+    return {
+        hit_type: data.hit_type || '-',
+        source_count: sources ? sources.length : 0,
+        retrieval: data.retrieval || {},
+        intent: data.intent || {},
+        stage_timings_ms: data.stage_timings_ms || {},
+        total_elapsed_ms: data.total_elapsed_ms || 0
+    };
+}
+
+console.log('api.js 加载完成（修复版）');
