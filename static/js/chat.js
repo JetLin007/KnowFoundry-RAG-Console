@@ -456,4 +456,211 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
+// ============================================
+// 模板管理功能
+// ============================================
+
+var templateState = {
+    currentTemplate: null,
+    templates: []
+};
+
+// 加载模板列表
+async function loadTemplates() {
+    console.log('loadTemplates 被调用');
+    try {
+        var response = await fetch('/api/agent/templates');
+        var data = await response.json();
+        console.log('模板列表数据:', data);
+        templateState.templates = data.templates || [];
+        renderTemplateList();
+        return templateState.templates;
+    } catch (e) {
+        console.error('加载模板列表失败:', e);
+        return [];
+    }
+}
+
+// 渲染模板列表
+function renderTemplateList() {
+    console.log('renderTemplateList 被调用，模板数量:', templateState.templates.length);
+    
+    var container = document.getElementById('templateList');
+    if (!container) {
+        console.warn('templateList 元素不存在');
+        return;
+    }
+    
+    if (!templateState.templates || templateState.templates.length === 0) {
+        container.innerHTML = '<div style="font-size: 12px; color: #999; text-align: center; padding: 8px;">暂无模板，请上传</div>';
+        return;
+    }
+    
+    var html = '';
+    templateState.templates.forEach(function(t) {
+        var isActive = templateState.currentTemplate === t.filename;
+        var sizeKB = (t.size / 1024).toFixed(1);
+        html += '<div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; border-bottom: 1px solid #f3f4f6; ' + 
+            (isActive ? 'background: #dbeafe;' : '') + '">' +
+            '<span style="font-size: 12px; color: #374151; cursor: pointer;" onclick="selectTemplate(\'' + t.filename + '\')">' +
+            (isActive ? '📌 ' : '') + t.filename +
+            '</span>' +
+            '<span style="font-size: 11px; color: #999;">' + sizeKB + 'KB</span>' +
+            '</div>';
+    });
+    
+    container.innerHTML = html;
+    console.log('✅ 模板列表已渲染，共', templateState.templates.length, '个模板');
+}
+
+// 选择模板
+function selectTemplate(filename) {
+    console.log('选择模板:', filename);
+    templateState.currentTemplate = filename;
+    var nameEl = document.getElementById('currentTemplateName');
+    if (nameEl) {
+        nameEl.textContent = filename;
+        nameEl.style.color = '#2563eb';
+    }
+    renderTemplateList();
+}
+
+// 获取当前选中的模板
+function getCurrentTemplate() {
+    return templateState.currentTemplate;
+}
+
+// 暴露全局函数
+window.loadTemplates = loadTemplates;
+window.renderTemplateList = renderTemplateList;
+window.selectTemplate = selectTemplate;
+window.getCurrentTemplate = getCurrentTemplate;
+
+console.log('✅ 模板管理功能已加载');
+
+// 渲染模板列表
+function renderTemplateList() {
+    console.log('renderTemplateList 被调用，模板数量:', templateState.templates.length);
+
+    var container = document.getElementById('templateList');
+    if (!container) {
+        console.warn('templateList 元素不存在');
+        return;
+    }
+
+    if (!templateState.templates || templateState.templates.length === 0) {
+        container.innerHTML = '<div style="font-size: 12px; color: #999; text-align: center; padding: 8px;">暂无模板，请上传</div>';
+        return;
+    }
+
+    var html = '';
+    templateState.templates.forEach(function(t) {
+        var isActive = templateState.currentTemplate === t.filename;
+        var sizeKB = (t.size / 1024).toFixed(1);
+        html += '<div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; border-bottom: 1px solid #f3f4f6; ' +
+            (isActive ? 'background: #dbeafe;' : '') + '">' +
+            '<span style="font-size: 12px; color: #374151; cursor: pointer;" onclick="selectTemplate(\'' + t.filename + '\')">' +
+            (isActive ? '📌 ' : '') + t.filename +
+            '</span>' +
+            '<span style="font-size: 11px; color: #999;">' + sizeKB + 'KB</span>' +
+            '</div>';
+    });
+
+    container.innerHTML = html;
+    console.log('✅ 模板列表已渲染，共', templateState.templates.length, '个模板');
+}
+
+// 选择模板
+function selectTemplate(filename) {
+    console.log('选择模板:', filename);
+    templateState.currentTemplate = filename;
+    var nameEl = document.getElementById('currentTemplateName');
+    if (nameEl) {
+        nameEl.textContent = filename;
+        nameEl.style.color = '#2563eb';
+    }
+    renderTemplateList();
+}
+
+// 获取当前选中的模板
+function getCurrentTemplate() {
+    return templateState.currentTemplate;
+}
+
+// 绑定模板上传事件
+function bindTemplateUpload() {
+    var uploadBtn = document.getElementById('uploadTemplateBtn');
+    var fileInput = document.getElementById('templateFileInput');
+
+    if (!uploadBtn || !fileInput) {
+        console.warn('模板上传按钮或文件输入不存在');
+        return;
+    }
+
+    console.log('绑定模板上传事件...');
+
+    uploadBtn.addEventListener('click', function() {
+        fileInput.click();
+    });
+
+    fileInput.addEventListener('change', function(e) {
+        var file = e.target.files[0];
+        if (!file) return;
+
+        console.log('选择文件:', file.name, file.size, 'bytes');
+
+        var statusEl = document.getElementById('templateUploadStatus');
+        if (statusEl) {
+            statusEl.textContent = '⏳ 上传中...';
+            statusEl.style.color = '#2563eb';
+        }
+
+        var formData = new FormData();
+        formData.append('file', file);
+        formData.append('name', file.name);
+
+        fetch('/api/agent/template/upload', {
+            method: 'POST',
+            body: formData
+        })
+        .then(function(response) {
+            return response.json();
+        })
+        .then(function(result) {
+            console.log('上传结果:', result);
+            if (result.success) {
+                if (statusEl) {
+                    statusEl.textContent = '✅ 上传成功！';
+                    statusEl.style.color = '#16a34a';
+                }
+                loadTemplates();
+            } else {
+                if (statusEl) {
+                    statusEl.textContent = '❌ 上传失败: ' + (result.error || '未知错误');
+                    statusEl.style.color = '#dc2626';
+                }
+            }
+        })
+        .catch(function(err) {
+            console.error('上传错误:', err);
+            if (statusEl) {
+                statusEl.textContent = '❌ 上传失败: ' + err.message;
+                statusEl.style.color = '#dc2626';
+            }
+        })
+        .finally(function() {
+            fileInput.value = '';
+            setTimeout(function() {
+                if (statusEl) statusEl.textContent = '';
+            }, 3000);addEventListener
+        });
+    });
+}
+
+// 暴露全局函数
+window.loadTemplates = loadTemplates;
+window.renderTemplateList = renderTemplateList;
+window.selectTemplate = selectTemplate;
+window.getCurrentTemplate = getCurrentTemplate;
+window.bindTemplateUpload = bindTemplateUpload;
 console.log('chat.js 加载完成');
